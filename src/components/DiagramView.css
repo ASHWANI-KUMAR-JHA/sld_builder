@@ -1,0 +1,40 @@
+.diagram-view {
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  margin: 2px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 70px);
+}
+
+.diagram-header {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--gray-200);
+  background: var(--gray-50);
+  flex-shrink: 0;
+}
+
+.diagram-header h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-800);
+}
+
+.diagram-subtitle {
+  font-size: 11px;
+  color: var(--gray-500);
+  margin-top: 1px;
+}
+
+.diagram-canvas {
+  flex: 1;
+  padding: 4px;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background: #fefefe;
+}

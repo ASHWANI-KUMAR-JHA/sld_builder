@@ -1,0 +1,35 @@
+.sld-svg {
+  width: 100%;
+  height: auto;
+  font-family: 'Inter', sans-serif;
+  background: white;
+}
+
+/* Labels */
+.sld-component-title {
+  font-size: 13px;
+  font-weight: 700;
+  fill: #1e40af;
+}
+
+.sld-component-label {
+  font-size: 10px;
+  font-weight: 600;
+  fill: #374151;
+}
+
+.sld-component-sublabel {
+  font-size: 8.5px;
+  fill: #6b7280;
+}
+
+.sld-wire-label {
+  font-size: 9px;
+  font-weight: 600;
+  fill: #4b5563;
+}
+
+.sld-label-tiny {
+  font-size: 8px;
+  fill: #6b7280;
+}

@@ -1,0 +1,14 @@
+.sunfeed-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  background: white;
+  border-top: 1px solid var(--gray-200);
+}
+
+.sunfeed-footer-address {
+  height: 28px;
+  width: auto;
+  object-fit: contain;
+}
