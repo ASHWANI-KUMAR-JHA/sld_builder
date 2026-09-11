@@ -1,8 +1,8 @@
-import { FolderOpen, Download, RotateCcw, PenTool, LogOut, FileSpreadsheet, Combine, ClipboardList, FileCheck } from 'lucide-react';
+import { FolderOpen, Download, RotateCcw, PenTool, LogOut, FileSpreadsheet, Combine, ClipboardList, FileCheck, Users } from 'lucide-react';
 import Logo from './Logo';
 import './Header.css';
 
-function Header({ companyName, onProjectsClick, onExportClick, onResetClick, onBuilderClick, onFlashReportClick, onMergePdfClick, onInstallationsClick, onJcrClick, onLogoutClick }) {
+function Header({ companyName, onProjectsClick, onExportClick, onResetClick, onBuilderClick, onFlashReportClick, onMergePdfClick, onInstallationsClick, onJcrClick, onUsersClick, onLogoutClick }) {
   return (
     <header className="header">
       <div className="header-inner">
@@ -35,6 +35,10 @@ function Header({ companyName, onProjectsClick, onExportClick, onResetClick, onB
           <button className="header-btn primary" onClick={onJcrClick} title="Pre-Dispatch Inspection">
             <FileCheck size={18} />
             <span>PDI</span>
+          </button>
+          <button className="header-btn primary" onClick={onUsersClick} title="Manage Users">
+            <Users size={18} />
+            <span>Users</span>
           </button>
           <button className="header-btn" onClick={onProjectsClick} title="Manage Projects">
             <FolderOpen size={18} />

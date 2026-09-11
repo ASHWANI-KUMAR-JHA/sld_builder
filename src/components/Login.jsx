@@ -22,15 +22,17 @@ function Login({ onLoginSuccess }) {
     }
 
     try {
-      const isValid = await validateCredentials(email, password);
-      if (isValid) {
-        setSession(email);
+      const user = await validateCredentials(email, password);
+      if (user) {
+        setSession(user);
         onLoginSuccess();
       } else {
         setError('Invalid email or password.');
       }
-    } catch {
-      setError('Authentication failed. Please try again.');
+    } catch (err) {
+      setError(err?.code === 'INACTIVE'
+        ? err.message
+        : 'Authentication failed. Please try again.');
     } finally {
       setLoading(false);
     }

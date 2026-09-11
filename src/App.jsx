@@ -11,6 +11,8 @@ import JCR from './components/JCR';
 import MergePDF from './components/MergePDF';
 import InstallationRegister from './components/InstallationRegister';
 import PublicInstallationForm from './components/PublicInstallationForm';
+import GeoDebug from './components/GeoDebug';
+import UserManager from './components/UserManager';
 import Login from './components/Login';
 import { loadFormData, saveFormData } from './utils/storage';
 import { DEFAULT_FORM_DATA, calculateDerivedValues } from './utils/defaults';
@@ -22,6 +24,11 @@ import './App.css';
 const isPublicForm =
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('form') === 'install';
+
+// Standalone geolocation diagnostic screen. Open with ?geo=debug in the URL.
+const isGeoDebug =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('geo') === 'debug';
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(() => isAuthenticated());
@@ -58,14 +65,20 @@ function App() {
     setLoggedIn(false);
   }, []);
 
-  // Public shareable form — bypasses auth so it can be shared externally.
-  if (isPublicForm) {
-    return <PublicInstallationForm />;
+  // Geolocation inspector — no login required, purely a diagnostic view.
+  if (isGeoDebug) {
+    return <GeoDebug />;
   }
 
-  // Show login page if not authenticated
+  // Show login page if not authenticated. The public installation form now
+  // also requires login so the submitting user is identified on the form.
   if (!loggedIn) {
     return <Login onLoginSuccess={() => setLoggedIn(true)} />;
+  }
+
+  // Shareable installation form — opens (after login) with the user's name on top.
+  if (isPublicForm) {
+    return <PublicInstallationForm onLogout={handleLogout} />;
   }
 
   // Show the interactive SLD builder page
@@ -93,6 +106,11 @@ function App() {
     return <InstallationRegister onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
   }
 
+  // Show the User Manager page
+  if (currentPage === 'users') {
+    return <UserManager onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
+  }
+
   return (
     <div className="app">
       <Header
@@ -105,6 +123,7 @@ function App() {
         onMergePdfClick={() => setCurrentPage('mergePdf')}
         onInstallationsClick={() => setCurrentPage('installations')}
         onJcrClick={() => setCurrentPage('jcr')}
+        onUsersClick={() => setCurrentPage('users')}
         onLogoutClick={handleLogout}
       />
 

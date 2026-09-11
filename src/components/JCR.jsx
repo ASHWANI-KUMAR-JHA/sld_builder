@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { ArrowLeft, LogOut, Plus, Trash2, Download, FileText, Save, Upload } from 'lucide-react';
+import { ArrowLeft, LogOut, Plus, Trash2, Download, FileText, Save, Upload, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import Logo from './Logo';
 import { readSheetRows, extractIdList } from '../utils/spreadsheet';
@@ -43,6 +43,18 @@ const SPV_COLS = [
   { key: 'efficiency', label: 'EFFICIENCY', group: true },
 ];
 
+// Columns for user-added custom sample tables (same layout as SPV module table)
+const CUSTOM_SAMPLE_COLS = [
+  { key: 'srNo', label: 'SR. NO' },
+  { key: 'make', label: 'MAKE' },
+  { key: 'type', label: 'TYPE' },
+  { key: 'wattageSpec', label: 'WATTAGE AS PER SPECIFICATION (IN WATT)' },
+  { key: 'voc', label: 'VOC', group: true },
+  { key: 'isc', label: 'ISC', group: true },
+  { key: 'wattage', label: 'WATTAGE', group: true },
+  { key: 'efficiency', label: 'EFFICIENCY', group: true },
+];
+
 const BATTERY_COLS = [
   { key: 'srNo', label: 'SR. NO OF BATTERY' },
   { key: 'make', label: 'BATTERY MAKE' },
@@ -57,6 +69,36 @@ const LUMINAIRE_COLS = [
   { key: 'power', label: 'POWER CONSUMPTION OF THE LUMINAIRE (IN WATT)' },
   { key: 'noLoadCurrent', label: 'NO LOAD CURRENT OF LUMINAIRE (IN mA)' },
 ];
+
+// Component categories a custom section can belong to. In the exported report,
+// custom sections are placed directly below the matching component's section,
+// and use the same column layout as that component.
+const COMPONENT_CATEGORIES = [
+  { value: 'spv', label: 'SPV Module' },
+  { value: 'battery', label: 'Battery' },
+  { value: 'luminaire', label: 'Luminaire' },
+];
+
+// Column layout + grouped-header + empty-row factory per category.
+const CATEGORY_CONFIG = {
+  spv: {
+    cols: CUSTOM_SAMPLE_COLS,
+    groupLabel: 'AS PER I-V CURVE OF SOLAR PV MODULE',
+    makeEmpty: () => ({ srNo: '', make: '', type: '', wattageSpec: '', voc: '', isc: '', wattage: '', efficiency: '' }),
+  },
+  battery: {
+    cols: BATTERY_COLS,
+    groupLabel: '',
+    makeEmpty: () => ({ srNo: '', make: '', type: '', voltage: '', capacity: '' }),
+  },
+  luminaire: {
+    cols: LUMINAIRE_COLS,
+    groupLabel: '',
+    makeEmpty: () => ({ srNo: '', make: '', power: '', noLoadCurrent: '' }),
+  },
+};
+
+const getCategoryConfig = (category) => CATEGORY_CONFIG[category] || CATEGORY_CONFIG.spv;
 
 // Parse IDs from pasted / uploaded text. Takes the FIRST column of each line.
 function parseIdList(text) {
@@ -89,6 +131,44 @@ function parseIdList(text) {
   return ids;
 }
 
+// Normalize an ID for duplicate comparison (trim + case-insensitive).
+const normalizeId = (id) => String(id ?? '').trim().toLowerCase();
+
+// Given a list of IDs, return an array of duplicate entries: { id, count }
+// (only IDs that appear more than once). Preserves first-seen original casing
+// and first-seen order.
+function findDuplicates(list) {
+  const counts = new Map();
+  const original = new Map();
+  for (const raw of list || []) {
+    const id = String(raw ?? '').trim();
+    if (!id) continue;
+    const key = normalizeId(id);
+    counts.set(key, (counts.get(key) || 0) + 1);
+    if (!original.has(key)) original.set(key, id);
+  }
+  const dups = [];
+  for (const [key, count] of counts) {
+    if (count > 1) dups.push({ id: original.get(key), count });
+  }
+  return dups;
+}
+
+// Return only unique IDs (first occurrence kept), preserving order.
+function uniqueIds(list) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of list || []) {
+    const id = String(raw ?? '').trim();
+    if (id === '') continue;
+    const key = normalizeId(id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(id);
+  }
+  return out;
+}
+
 // Resize an array of row objects to a given length, preserving existing data.
 function resizeRows(rows, count, makeEmpty) {
   const n = Math.max(0, Math.floor(count) || 0);
@@ -111,6 +191,68 @@ function loadPersisted() {
 }
 
 const PERSISTED = loadPersisted() || {};
+
+// Export duplicate entries (serial number + count) for one section as CSV.
+function exportDuplicatesCsv(title, duplicates) {
+  const header = 'Serial Number,Count';
+  const body = duplicates.map(d => `${String(d.id).replace(/"/g, '""')},${d.count}`);
+  const csv = [header, ...body].join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const safe = (title || 'section').replace(/[^\w\-]+/g, '_');
+  a.download = `${safe}_duplicates.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Section-wise duplicate report: shows each duplicate serial number with its
+// count, and offers an export of (serial number + count).
+function DuplicatePanel({ title, list }) {
+  const cleaned = (list || []).filter(id => String(id).trim() !== '');
+  const duplicates = findDuplicates(cleaned);
+  const uniqueCount = uniqueIds(cleaned).length;
+  if (duplicates.length === 0) {
+    return (
+      <div className="dup-panel dup-ok">
+        <CheckCircle2 size={13} /> No duplicates ({uniqueCount} unique)
+      </div>
+    );
+  }
+  const totalExtra = duplicates.reduce((s, d) => s + (d.count - 1), 0);
+  return (
+    <div className="dup-panel dup-warn">
+      <div className="dup-head">
+        <span className="dup-title">
+          <AlertTriangle size={13} /> {duplicates.length} duplicate serial{duplicates.length > 1 ? 's' : ''}
+          {' '}({totalExtra} extra, {uniqueCount} unique)
+        </span>
+        <button
+          className="btn-remove-text dup-export"
+          onClick={() => exportDuplicatesCsv(title, duplicates)}
+          title="Export duplicate serial numbers with counts"
+        >
+          <Download size={13} /> Export
+        </button>
+      </div>
+      <div className="dup-list">
+        <div className="dup-row dup-row-head">
+          <span>Serial Number</span>
+          <span>Count</span>
+        </div>
+        {duplicates.map((d, i) => (
+          <div className="dup-row" key={`${d.id}-${i}`}>
+            <span className="dup-id">{d.id}</span>
+            <span className="dup-count">{d.count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // Reusable bulk-upload box for one ID list (SPV / Battery / Luminaire)
 function BulkUploadBox({ title, list, onUpload, onPaste, onClear, onChange }) {
@@ -144,6 +286,7 @@ function BulkUploadBox({ title, list, onUpload, onPaste, onClear, onChange }) {
         value={list.join('\n')}
         onChange={(e) => onChange(e.target.value.split(/\r?\n/))}
       />
+      <DuplicatePanel title={title} list={list} />
     </div>
   );
 }
@@ -183,6 +326,14 @@ function JCR({ onBack, onLogout }) {
   const [batteryRows, setBatteryRows] = useState(PERSISTED.batteryRows ?? []);
   const [luminaireRows, setLuminaireRows] = useState(PERSISTED.luminaireRows ?? []);
 
+  // User-added custom sample sections. Each: { id, title, groupLabel, rows: [] }
+  // Same tabular format as the SPV module table, sized to sampleCount.
+  const [customSections, setCustomSections] = useState(PERSISTED.customSections ?? []);
+
+  // User-added custom bulk-upload sections (free-text header, same sheet as SPV Modules)
+  // Each: { id, title, list: [] }
+  const [customBulkSections, setCustomBulkSections] = useState(PERSISTED.customBulkSections ?? []);
+
   const [committeeComments, setCommitteeComments] = useState(PERSISTED.committeeComments ?? 'Material verified and accepted.');
 
   // Supplier firm signature block (fixed block from the format)
@@ -208,6 +359,10 @@ function JCR({ onBack, onLogout }) {
     setSpvRows(prev => resizeRows(prev, sampleCount, () => ({ srNo: '', make: '', type: '', wattageSpec: '', voc: '', isc: '', wattage: '', efficiency: '' })));
     setBatteryRows(prev => resizeRows(prev, sampleCount, () => ({ srNo: '', make: '', type: '', voltage: '', capacity: '' })));
     setLuminaireRows(prev => resizeRows(prev, sampleCount, () => ({ srNo: '', make: '', power: '', noLoadCurrent: '' })));
+    setCustomSections(prev => prev.map(sec => ({
+      ...sec,
+      rows: resizeRows(sec.rows ?? [], sampleCount, getCategoryConfig(sec.category).makeEmpty),
+    })));
   }, [sampleCount]);
 
   // Keep signatures sized to signatureCount
@@ -219,8 +374,8 @@ function JCR({ onBack, onLogout }) {
   useEffect(() => {
     const data = {
       projectName, reportHeading, fields, additionalFields, workOrders,
-      sampleCount, spvRows, batteryRows, luminaireRows, committeeComments,
-      supplier, signatureCount, signatures, spvList, batteryList, luminaireList,
+      sampleCount, spvRows, batteryRows, luminaireRows, customSections, committeeComments,
+      supplier, signatureCount, signatures, spvList, batteryList, luminaireList, customBulkSections,
     };
     try {
       localStorage.setItem(PDI_STORAGE_KEY, JSON.stringify(data));
@@ -229,16 +384,16 @@ function JCR({ onBack, onLogout }) {
     }
   }, [
     projectName, reportHeading, fields, additionalFields, workOrders,
-    sampleCount, spvRows, batteryRows, luminaireRows, committeeComments,
-    supplier, signatureCount, signatures, spvList, batteryList, luminaireList,
+    sampleCount, spvRows, batteryRows, luminaireRows, customSections, committeeComments,
+    supplier, signatureCount, signatures, spvList, batteryList, luminaireList, customBulkSections,
   ]);
 
   // Export all current PDI data as a downloadable JSON file
   const exportJSON = useCallback(() => {
     const data = {
       projectName, reportHeading, fields, additionalFields, workOrders,
-      sampleCount, spvRows, batteryRows, luminaireRows, committeeComments,
-      supplier, signatureCount, signatures, spvList, batteryList, luminaireList,
+      sampleCount, spvRows, batteryRows, luminaireRows, customSections, committeeComments,
+      supplier, signatureCount, signatures, spvList, batteryList, luminaireList, customBulkSections,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -252,8 +407,8 @@ function JCR({ onBack, onLogout }) {
     URL.revokeObjectURL(url);
   }, [
     projectName, reportHeading, fields, additionalFields, workOrders,
-    sampleCount, spvRows, batteryRows, luminaireRows, committeeComments,
-    supplier, signatureCount, signatures, spvList, batteryList, luminaireList,
+    sampleCount, spvRows, batteryRows, luminaireRows, customSections, committeeComments,
+    supplier, signatureCount, signatures, spvList, batteryList, luminaireList, customBulkSections,
   ]);
 
   // Load PDI data from a user-selected JSON file
@@ -277,9 +432,11 @@ function JCR({ onBack, onLogout }) {
         if (d.supplier) setSupplier(d.supplier);
         if (d.signatureCount !== undefined) setSignatureCount(d.signatureCount);
         if (d.signatures) setSignatures(d.signatures);
+        if (d.customSections) setCustomSections(d.customSections);
         if (d.spvList) setSpvList(d.spvList);
         if (d.batteryList) setBatteryList(d.batteryList);
         if (d.luminaireList) setLuminaireList(d.luminaireList);
+        if (d.customBulkSections) setCustomBulkSections(d.customBulkSections);
       } catch (err) {
         console.error('Failed to parse JSON file:', err);
         alert('Could not load file: invalid JSON.');
@@ -322,6 +479,82 @@ function JCR({ onBack, onLogout }) {
 
   const updateSignature = useCallback((idx, key, value) => {
     setSignatures(prev => prev.map((r, i) => (i === idx ? { ...r, [key]: value } : r)));
+  }, []);
+
+  // Custom sample section handlers
+  const addCustomSection = useCallback(() => {
+    setCustomSections(prev => [
+      ...prev,
+      {
+        id: prev.length ? Math.max(...prev.map(s => s.id)) + 1 : 1,
+        title: '',
+        category: 'spv',
+        groupLabel: CATEGORY_CONFIG.spv.groupLabel,
+        rows: resizeRows([], sampleCount, CATEGORY_CONFIG.spv.makeEmpty),
+      },
+    ]);
+  }, [sampleCount]);
+  const removeCustomSection = useCallback((id) => {
+    setCustomSections(prev => prev.filter(s => s.id !== id));
+  }, []);
+  const updateCustomSectionMeta = useCallback((id, key, value) => {
+    setCustomSections(prev => prev.map(s => {
+      if (s.id !== id) return s;
+      if (key === 'category') {
+        const cfg = getCategoryConfig(value);
+        return {
+          ...s,
+          category: value,
+          groupLabel: cfg.groupLabel,
+          rows: resizeRows([], s.rows?.length ?? 0, cfg.makeEmpty),
+        };
+      }
+      return { ...s, [key]: value };
+    }));
+  }, []);
+  const updateCustomSectionRow = useCallback((id, rowIdx, key, value) => {
+    setCustomSections(prev => prev.map(s => (
+      s.id === id
+        ? { ...s, rows: s.rows.map((r, i) => (i === rowIdx ? { ...r, [key]: value } : r)) }
+        : s
+    )));
+  }, []);
+
+  // Custom bulk-upload section handlers
+  const addCustomBulkSection = useCallback(() => {
+    setCustomBulkSections(prev => [
+      ...prev,
+      { id: prev.length ? Math.max(...prev.map(s => s.id)) + 1 : 1, title: '', category: 'spv', list: [] },
+    ]);
+  }, []);
+  const removeCustomBulkSection = useCallback((id) => {
+    setCustomBulkSections(prev => prev.filter(s => s.id !== id));
+  }, []);
+  const updateCustomBulkSection = useCallback((id, key, value) => {
+    setCustomBulkSections(prev => prev.map(s => (s.id === id ? { ...s, [key]: value } : s)));
+  }, []);
+  const handleCustomBulkUpload = useCallback(async (e, id) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const rows = await readSheetRows(file);
+      const list = extractIdList(rows);
+      setCustomBulkSections(prev => prev.map(s => (s.id === id ? { ...s, list } : s)));
+    } catch (err) {
+      console.error('Failed to read list file:', err);
+      alert(`Could not read file: ${err.message}`);
+    }
+  }, []);
+  const handleCustomBulkPaste = useCallback((id) => (e) => {
+    const text = e.clipboardData?.getData('text');
+    if (!text) return;
+    const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+    if (lines.length > 1) {
+      e.preventDefault();
+      const list = parseIdList(text);
+      setCustomBulkSections(prev => prev.map(s => (s.id === id ? { ...s, list } : s)));
+    }
   }, []);
 
   const handleSupplier = useCallback((key, value) => {
@@ -546,10 +779,31 @@ function JCR({ onBack, onLogout }) {
     // Field 11
     y = drawInfoRow(y, '11', 'NOS. OF SAMPLE TAKEN AT RANDOM FOR TESTING AS PER DETAILS GIVEN BELOW', String(sampleCount || ''));
 
-    // Sample tables
+    // Render custom sample sections belonging to a given component category.
+    const drawCustomSectionsFor = (yPos, category) => {
+      customSections
+        .filter(sec => (sec.category || 'spv') === category)
+        .forEach((sec) => {
+          const cfg = getCategoryConfig(sec.category);
+          const title = (sec.title || 'CUSTOM SECTION').trim();
+          yPos = drawTable(
+            yPos,
+            title,
+            cfg.cols,
+            (sec.rows ?? []).map((r, i) => ({ ...r, srNo: r.srNo || i + 1 })),
+            cfg.groupLabel,
+          );
+        });
+      return yPos;
+    };
+
+    // Sample tables — each component followed by its custom sections
     y = drawTable(y, '(I) SPV MODULE:', SPV_COLS, spvRows.map((r, i) => ({ ...r, srNo: r.srNo || i + 1 })), 'AS PER I-V CURVE OF SOLAR PV MODULE');
+    y = drawCustomSectionsFor(y, 'spv');
     y = drawTable(y, '(II) BATTERY:', BATTERY_COLS, batteryRows);
+    y = drawCustomSectionsFor(y, 'battery');
     y = drawTable(y, '(III) LUMINARIES:', LUMINAIRE_COLS, luminaireRows);
+    y = drawCustomSectionsFor(y, 'luminaire');
 
     // ===== PAGE 2 (additional fields) =====
     drawFooter();
@@ -683,15 +937,31 @@ function JCR({ onBack, onLogout }) {
       }
     };
 
-    drawIdListPages('SPV MODULE SERIAL NUMBERS (ATTACHED LIST)', spvList.filter(id => id.trim() !== ''));
-    drawIdListPages('BATTERY SERIAL NUMBERS (ATTACHED LIST)', batteryList.filter(id => id.trim() !== ''));
-    drawIdListPages('LUMINAIRE SERIAL NUMBERS (ATTACHED LIST)', luminaireList.filter(id => id.trim() !== ''));
+    // Render custom bulk-upload lists belonging to a given component category.
+    // Only UNIQUE serial numbers are printed (duplicates are removed).
+    const drawCustomBulkFor = (category) => {
+      customBulkSections
+        .filter(sec => (sec.category || 'spv') === category)
+        .forEach((sec) => {
+          const title = (sec.title || 'CUSTOM ATTACHED LIST').trim();
+          drawIdListPages(title, uniqueIds(sec.list ?? []));
+        });
+    };
+
+    // Each component's attached list followed by its custom bulk lists.
+    // uniqueIds() ensures only unique serial numbers reach the PDF.
+    drawIdListPages('SPV MODULE SERIAL NUMBERS (ATTACHED LIST)', uniqueIds(spvList));
+    drawCustomBulkFor('spv');
+    drawIdListPages('BATTERY SERIAL NUMBERS (ATTACHED LIST)', uniqueIds(batteryList));
+    drawCustomBulkFor('battery');
+    drawIdListPages('LUMINAIRE SERIAL NUMBERS (ATTACHED LIST)', uniqueIds(luminaireList));
+    drawCustomBulkFor('luminaire');
 
     drawFooter();
 
     const safeName = (projectName || 'PDI_report').replace(/[^\w\-]+/g, '_');
     doc.save(`${safeName}.pdf`);
-  }, [projectName, reportHeading, fields, additionalFields, workOrders, sampleCount, spvRows, batteryRows, luminaireRows, committeeComments, signatures, supplier, spvList, batteryList, luminaireList]);
+  }, [projectName, reportHeading, fields, additionalFields, workOrders, sampleCount, spvRows, batteryRows, luminaireRows, customSections, committeeComments, signatures, supplier, spvList, batteryList, luminaireList, customBulkSections]);
 
   return (
     <div className="jcr-page">
@@ -934,6 +1204,95 @@ function JCR({ onBack, onLogout }) {
                 </table>
               </div>
             </section>
+
+            {/* User-added custom sample sections (same layout as SPV module table) */}
+            {customSections.map((sec) => (
+              <section className="jcr-card" key={sec.id}>
+                <div className="jcr-custom-head">
+                  <input
+                    type="text"
+                    className="jcr-custom-title"
+                    value={sec.title}
+                    onChange={(e) => updateCustomSectionMeta(sec.id, 'title', e.target.value)}
+                    placeholder="Section title (e.g. (IV) CHARGE CONTROLLER)"
+                  />
+                  <select
+                    className="jcr-category-select"
+                    value={sec.category || 'spv'}
+                    onChange={(e) => updateCustomSectionMeta(sec.id, 'category', e.target.value)}
+                    title="Place this section below the selected component in the report"
+                  >
+                    {COMPONENT_CATEGORIES.map(c => (
+                      <option key={c.value} value={c.value}>Under: {c.label}</option>
+                    ))}
+                  </select>
+                  <button className="btn-remove-text" onClick={() => removeCustomSection(sec.id)}>
+                    <Trash2 size={14} /> Remove Section
+                  </button>
+                </div>
+                {getCategoryConfig(sec.category).cols.some(c => c.group) && (
+                  <div className="jcr-field-block">
+                    <label>Grouped header label (spans the grouped columns)</label>
+                    <input
+                      type="text"
+                      value={sec.groupLabel}
+                      onChange={(e) => updateCustomSectionMeta(sec.id, 'groupLabel', e.target.value)}
+                      placeholder="e.g. AS PER I-V CURVE OF SOLAR PV MODULE"
+                    />
+                  </div>
+                )}
+                {(() => {
+                  const cfg = getCategoryConfig(sec.category);
+                  const baseCols = cfg.cols.filter(c => !c.group);
+                  const groupCols = cfg.cols.filter(c => c.group);
+                  return (
+                    <div className="jcr-table-wrapper">
+                      <table className="jcr-table">
+                        <thead>
+                          <tr>
+                            {baseCols.map(c => (
+                              <th key={c.key} rowSpan={groupCols.length ? 2 : 1}>{c.label}</th>
+                            ))}
+                            {groupCols.length > 0 && (
+                              <th colSpan={groupCols.length}>{sec.groupLabel || '\u00A0'}</th>
+                            )}
+                          </tr>
+                          {groupCols.length > 0 && (
+                            <tr>
+                              {groupCols.map(c => (
+                                <th key={c.key}>{c.label}</th>
+                              ))}
+                            </tr>
+                          )}
+                        </thead>
+                        <tbody>
+                          {(sec.rows ?? []).map((row, idx) => (
+                            <tr key={idx}>
+                              {cfg.cols.map(c => (
+                                <td key={c.key}>
+                                  <input
+                                    value={row[c.key] ?? ''}
+                                    onChange={(e) => updateCustomSectionRow(sec.id, idx, c.key, e.target.value)}
+                                    placeholder={c.key === 'srNo' ? `${idx + 1})` : undefined}
+                                  />
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
+              </section>
+            ))}
+
+            <section className="jcr-card jcr-add-section-card">
+              <button className="btn-add-sm" onClick={addCustomSection}>
+                <Plus size={14} /> Add Custom Sample Section
+              </button>
+              <span className="jcr-hint">Same tabular format as the SPV Module table, sized to the sample count above.</span>
+            </section>
           </>
         )}
 
@@ -1062,6 +1421,65 @@ function JCR({ onBack, onLogout }) {
               onChange={setLuminaireList}
               onClear={() => setLuminaireList([])}
             />
+
+            {/* User-added custom bulk-upload sections (free-text header, same sheet) */}
+            {customBulkSections.map((sec) => (
+              <div className="bulk-box" key={sec.id}>
+                <div className="bulk-box-head">
+                  <input
+                    type="text"
+                    className="bulk-title-input"
+                    value={sec.title}
+                    onChange={(e) => updateCustomBulkSection(sec.id, 'title', e.target.value)}
+                    placeholder="Header (free text)"
+                  />
+                  <span className="bulk-count">{(sec.list ?? []).filter(id => id.trim() !== '').length} IDs</span>
+                </div>
+                <select
+                  className="jcr-category-select bulk-category-select"
+                  value={sec.category || 'spv'}
+                  onChange={(e) => updateCustomBulkSection(sec.id, 'category', e.target.value)}
+                  title="Place this list below the selected component in the report"
+                >
+                  {COMPONENT_CATEGORIES.map(c => (
+                    <option key={c.value} value={c.value}>Under: {c.label}</option>
+                  ))}
+                </select>
+                <div className="bulk-actions">
+                  <label className="btn-add-sm bulk-upload-label">
+                    <Upload size={14} /> Upload File
+                    <input
+                      type="file"
+                      accept=".csv,.txt,.tsv,.xlsx,.xls"
+                      style={{ display: 'none' }}
+                      onChange={(e) => handleCustomBulkUpload(e, sec.id)}
+                    />
+                  </label>
+                  <button className="btn-remove-text" onClick={() => updateCustomBulkSection(sec.id, 'list', [])} disabled={(sec.list ?? []).length === 0}>
+                    <Trash2 size={14} /> Clear
+                  </button>
+                  <button className="btn-remove-text" onClick={() => removeCustomBulkSection(sec.id)}>
+                    <Trash2 size={14} /> Remove
+                  </button>
+                </div>
+                <textarea
+                  className="bulk-paste"
+                  rows={5}
+                  placeholder="Type or paste IDs here (one per line, or first column of pasted rows)"
+                  onPaste={handleCustomBulkPaste(sec.id)}
+                  value={(sec.list ?? []).join('\n')}
+                  onChange={(e) => updateCustomBulkSection(sec.id, 'list', e.target.value.split(/\r?\n/))}
+                />
+                <DuplicatePanel title={sec.title || 'Custom List'} list={sec.list ?? []} />
+              </div>
+            ))}
+          </div>
+
+          <div className="jcr-add-bulk-bar">
+            <button className="btn-add-sm" onClick={addCustomBulkSection}>
+              <Plus size={14} /> Add Custom Bulk Upload Section
+            </button>
+            <span className="jcr-hint">Free-text header, same sheet format as SPV Modules. Printed on its own PDF pages.</span>
           </div>
         </section>
 

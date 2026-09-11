@@ -64,8 +64,13 @@
   transition: background 0.15s, color 0.15s;
 }
 
-.pf-step:hover {
+.pf-step:hover:not(.locked) {
   background: #f8fafc;
+}
+
+.pf-step.locked {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .pf-step-dot {
@@ -493,4 +498,336 @@
     flex: 1;
     padding: 12px;
   }
+}
+
+/* Logged-in user banner on the form header */
+.pf-user {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pf-user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #eef2ff;
+  color: #4338ca;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  max-width: 220px;
+}
+
+.pf-user-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf-logout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.pf-logout:hover {
+  color: #dc2626;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+/* ===== Files step ===== */
+.pf-files {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.pf-file-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pf-file-field > label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.pf-file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 10px 16px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.pf-file-btn:hover {
+  border-color: #f59e0b;
+  color: #b45309;
+  background: #fffbeb;
+}
+
+.pf-file-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pf-file-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 0.85rem;
+}
+
+.pf-file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf-file-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 6px;
+}
+
+.pf-file-remove:hover {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+@media (max-width: 640px) {
+  .pf-files {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Loading / spinner ===== */
+@keyframes pf-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pf-spin {
+  animation: pf-spin 0.8s linear infinite;
+}
+
+.pf-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.pf-loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 36px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  text-align: center;
+  color: #0f172a;
+  min-width: 260px;
+}
+
+.pf-loading-card h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.pf-loading-card p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf-loading-card .pf-spin {
+  color: #f59e0b;
+}
+
+.pf-loading-bar {
+  width: 220px;
+  height: 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.pf-loading-bar-fill {
+  height: 100%;
+  background: #f59e0b;
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+/* Site image capture (camera + GPS) */
+.pf-capture-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pf-capture-btn {
+  border-style: solid;
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.pf-capture-btn.is-busy {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.pf-file-btn-ghost {
+  background: #f8fafc;
+}
+
+.pf-capture-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.pf-capture-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.pf-capture-preview {
+  position: relative;
+  align-self: flex-start;
+  margin-top: 4px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  max-width: 320px;
+}
+
+.pf-capture-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pf-capture-clear {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.65);
+  color: #fff;
+  cursor: pointer;
+}
+
+.pf-capture-clear:hover {
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.pf-capture-coords {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 6px;
+  padding: 3px 7px;
+}
+
+/* Review step image preview */
+.pf-review-image {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.pf-review-image img {
+  display: block;
+  max-width: 220px;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.pf-review-image-name {
+  font-size: 0.8rem;
+  color: #64748b;
+  word-break: break-all;
+}
+
+.pf-review-image-coords {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #b45309;
 }

@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   ArrowLeft, LogOut, Plus, Trash2, Save, LayoutGrid, ClipboardList,
   Search, RefreshCw, MapPin, ClipboardPaste, Upload, Share2, Download, ChevronDown, X,
+  Pencil, Check, Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  FileText, Paperclip, Image as ImageIcon,
 } from 'lucide-react';
 import Logo from './Logo';
 import {
@@ -9,6 +11,7 @@ import {
   emptyInstallation,
   fetchInstallations,
   insertInstallations,
+  updateInstallation,
   deleteInstallation,
   parsePastedRows,
   parseUploadedFile,
@@ -38,6 +41,9 @@ function InstallationRegister({ onBack, onLogout }) {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [dashError, setDashError] = useState(null);
+  // Tracks whether the dashboard dataset has been fetched at least once, so we
+  // don't hit the API again every time the user switches back to the dashboard.
+  const [loaded, setLoaded] = useState(false);
 
   const addRow = useCallback(() => {
     setRows((prev) => [
@@ -131,23 +137,29 @@ function InstallationRegister({ onBack, onLogout }) {
     }
   }, [rows, projectName, workOrder]);
 
+  // Fetch the full dataset once. Search/filtering is done client-side, so this
+  // does not need to re-hit the API when the search text changes.
   const loadRecords = useCallback(async () => {
     setLoading(true);
     setDashError(null);
     try {
-      const data = await fetchInstallations({ search });
+      // Fetch everything in batches so the 1000-row cap is bypassed and the
+      // client-side filters/dropdowns see the full dataset.
+      const data = await fetchInstallations();
       setRecords(data);
+      setLoaded(true);
     } catch (err) {
       setDashError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, []);
 
   useEffect(() => {
-    if (mode === 'dashboard') loadRecords();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
+    // Only fetch the first time the dashboard is opened. Switching tabs back
+    // and forth reuses the already-loaded data; use Refresh to reload.
+    if (mode === 'dashboard' && !loaded) loadRecords();
+  }, [mode, loaded, loadRecords]);
 
   const handleDelete = useCallback(async (id) => {
     if (!window.confirm('Delete this installation record?')) return;
@@ -157,6 +169,11 @@ function InstallationRegister({ onBack, onLogout }) {
     } catch (err) {
       setDashError(`Delete failed: ${err.message}`);
     }
+  }, []);
+
+  const handleUpdate = useCallback(async (id, row) => {
+    const updated = await updateInstallation(id, row);
+    setRecords((prev) => prev.map((r) => (r.id === id ? { ...r, ...(updated || row) } : r)));
   }, []);
 
   return (
@@ -229,6 +246,7 @@ function InstallationRegister({ onBack, onLogout }) {
             setSearch={setSearch}
             loadRecords={loadRecords}
             handleDelete={handleDelete}
+            handleUpdate={handleUpdate}
             dashError={dashError}
           />
         )}
@@ -343,6 +361,9 @@ const SORTABLE_COLS = [
   { key: 'luminaire_serial', numeric: true },
 ];
 
+// How many rows to render per dashboard page.
+const PAGE_SIZE = 100;
+
 // Dropdown filters shown above the dashboard table.
 const FILTER_DEFS = [
   { key: 'project_name', label: 'Project' },
@@ -351,15 +372,59 @@ const FILTER_DEFS = [
   { key: 'block', label: 'Block' },
   { key: 'assembly_constituency', label: 'Assembly' },
   { key: 'exact_location', label: 'Location' },
+  { key: 'submitted_by', label: 'Creator' },
 ];
 
-function DashboardView({ records, loading, search, setSearch, loadRecords, handleDelete, dashError }) {
+function DashboardView({ records, loading, search, setSearch, loadRecords, handleDelete, handleUpdate, dashError }) {
   // Selected values per filter key — an array of strings ([] = all).
   const [filters, setFilters] = useState({});
   // Which filter dropdown is currently open.
   const [openFilter, setOpenFilter] = useState(null);
   // { key, dir } — dir is 'asc' | 'desc'.
   const [sort, setSort] = useState(null);
+  // Created-date range filter (yyyy-mm-dd strings).
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  // Id of the row currently being edited, plus its draft values.
+  const [editingId, setEditingId] = useState(null);
+  const [editDraft, setEditDraft] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState(null);
+  // Current 1-based page for the filtered+sorted result set.
+  const [page, setPage] = useState(1);
+
+  const beginEdit = useCallback((record) => {
+    setEditError(null);
+    setEditingId(record.id);
+    const draft = {};
+    for (const { key } of INSTALLATION_FIELDS) draft[key] = record[key] ?? '';
+    setEditDraft(draft);
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setEditingId(null);
+    setEditDraft(null);
+    setEditError(null);
+  }, []);
+
+  const updateDraft = useCallback((key, value) => {
+    setEditDraft((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    if (editingId == null || !editDraft) return;
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      await handleUpdate(editingId, editDraft);
+      setEditingId(null);
+      setEditDraft(null);
+    } catch (err) {
+      setEditError(err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [editingId, editDraft, handleUpdate]);
 
   // Toggle a single value within a column's multi-select selection.
   const toggleFilterValue = useCallback((key, value) => {
@@ -376,7 +441,11 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
     setFilters((prev) => ({ ...prev, [key]: [] }));
   }, []);
 
-  const clearFilters = useCallback(() => setFilters({}), []);
+  const clearFilters = useCallback(() => {
+    setFilters({});
+    setStartDate('');
+    setEndDate('');
+  }, []);
 
   // Close any open filter dropdown when clicking outside the filter bar.
   useEffect(() => {
@@ -408,15 +477,37 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
     return opts;
   }, [records]);
 
-  // Apply dropdown filters, then sorting.
+  // Apply free-text search, dropdown filters, then sorting — all client-side.
   const visibleRecords = useMemo(() => {
-    let list = records.filter((r) =>
-      FILTER_DEFS.every(({ key }) => {
+    const startTs = startDate ? new Date(`${startDate}T00:00:00`).getTime() : null;
+    const endTs = endDate ? new Date(`${endDate}T23:59:59.999`).getTime() : null;
+    const term = search.trim().toLowerCase();
+    const SEARCH_KEYS = ['project_name', 'work_order', 'exact_location', 'village', 'module_serial', 'battery_serial', 'luminaire_serial'];
+
+    let list = records.filter((r) => {
+      if (term) {
+        const matchesSearch = SEARCH_KEYS.some((k) =>
+          String(r[k] ?? '').toLowerCase().includes(term)
+        );
+        if (!matchesSearch) return false;
+      }
+
+      const matchesFilters = FILTER_DEFS.every(({ key }) => {
         const selected = filters[key];
         if (!selected || selected.length === 0) return true;
         return selected.includes(String(r[key] ?? '').trim());
-      })
-    );
+      });
+      if (!matchesFilters) return false;
+
+      if (startTs != null || endTs != null) {
+        if (!r.created_at) return false;
+        const ts = new Date(r.created_at).getTime();
+        if (Number.isNaN(ts)) return false;
+        if (startTs != null && ts < startTs) return false;
+        if (endTs != null && ts > endTs) return false;
+      }
+      return true;
+    });
 
     if (sort) {
       const col = SORTABLE_COLS.find((c) => c.key === sort.key);
@@ -440,13 +531,36 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
       });
     }
     return list;
-  }, [records, filters, sort]);
+  }, [records, filters, sort, startDate, endDate, search]);
 
   const total = visibleRecords.length;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // Keep the current page in range whenever the filtered set changes.
+  useEffect(() => {
+    setPage((p) => Math.min(Math.max(1, p), pageCount));
+  }, [pageCount]);
+
+  // Reset to the first page when filters, search results or sort change.
+  useEffect(() => {
+    setPage(1);
+  }, [filters, sort, startDate, endDate, records, search]);
+
+  // The rows rendered for the current page.
+  const pagedRecords = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return visibleRecords.slice(start, start + PAGE_SIZE);
+  }, [visibleRecords, page]);
+
+  const pageStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const pageEnd = Math.min(page * PAGE_SIZE, total);
   const withRms = visibleRecords.filter((r) => String(r.rms).toUpperCase() === 'YES').length;
   const projects = new Set(visibleRecords.map((r) => r.project_name).filter(Boolean)).size;
 
-  const activeFilterCount = FILTER_DEFS.filter(({ key }) => (filters[key] || []).length > 0).length;
+  const activeFilterCount =
+    FILTER_DEFS.filter(({ key }) => (filters[key] || []).length > 0).length +
+    (startDate ? 1 : 0) +
+    (endDate ? 1 : 0);
 
   const sortIndicator = (key) => {
     if (!sort || sort.key !== key) return ' ↕';
@@ -460,10 +574,11 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
       const s = v == null ? '' : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const header = INSTALLATION_FIELDS.map((f) => f.label);
+    const exportFields = [...INSTALLATION_FIELDS, { key: 'submitted_by', label: 'Creator' }];
+    const header = exportFields.map((f) => f.label);
     const lines = [header.map(esc).join(',')];
     for (const r of visibleRecords) {
-      lines.push(INSTALLATION_FIELDS.map((f) => esc(r[f.key])).join(','));
+      lines.push(exportFields.map((f) => esc(r[f.key])).join(','));
     }
     // Prepend BOM so Excel opens UTF-8 correctly.
     const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
@@ -494,7 +609,6 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
             value={search}
             placeholder="Search project, work order, location, village, module…"
             onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && loadRecords()}
           />
         </div>
         <button className="btn-refresh" onClick={loadRecords}>
@@ -563,6 +677,26 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
             </div>
           );
         })}
+        <div className="filter-field date-filter">
+          <label><Calendar size={12} /> Created From</label>
+          <input
+            type="date"
+            className="date-input"
+            value={startDate}
+            max={endDate || undefined}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+        </div>
+        <div className="filter-field date-filter">
+          <label><Calendar size={12} /> Created To</label>
+          <input
+            type="date"
+            className="date-input"
+            value={endDate}
+            min={startDate || undefined}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
+        </div>
         {activeFilterCount > 0 && (
           <button className="btn-clear-filters" onClick={clearFilters} title="Clear all filters">
             <RefreshCw size={14} /> Clear Filters
@@ -597,54 +731,217 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
                 Luminaire SN{sortIndicator('luminaire_serial')}
               </th>
               <th>RMS</th>
-              <th></th>
+              <th>Files</th>
+              <th>Created</th>
+              <th>Creator</th>
+              <th className="action-col">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {visibleRecords.length === 0 && !loading && (
-              <tr><td colSpan={14} className="empty">No records found.</td></tr>
-            )}
-            {visibleRecords.map((r) => (
-              <tr key={r.id}>
-                <td>{r.project_name || '—'}</td>
-                <td>{r.work_order || '—'}</td>
-                <td>{r.sno || '—'}</td>
-                <td>{r.exact_location || '—'}</td>
-                <td>
-                  {r.latitude && r.longitude ? (
-                    <a
-                      className="coord-link"
-                      href={`https://maps.google.com/?q=${r.latitude},${r.longitude}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <MapPin size={12} /> {r.latitude}, {r.longitude}
-                    </a>
-                  ) : '—'}
-                </td>
-                <td>{r.village || r.gram_panchayat || '—'}</td>
-                <td>{r.block || '—'}</td>
-                <td>{r.assembly_constituency || '—'}</td>
-                <td>{r.commissioning_date || '—'}</td>
-                <td>{r.module_serial || '—'}</td>
-                <td>{r.battery_serial || '—'}</td>
-                <td>{r.luminaire_serial || '—'}</td>
-                <td>
-                  <span className={`badge ${String(r.rms).toUpperCase() === 'YES' ? 'yes' : 'no'}`}>
-                    {r.rms || '—'}
+            {loading && (
+              <tr>
+                <td colSpan={17} className="empty">
+                  <span className="dash-loading">
+                    <RefreshCw size={16} className="dash-spin" /> Loading installations…
                   </span>
                 </td>
-                <td>
-                  <button className="btn-icon danger" onClick={() => handleDelete(r.id)} title="Delete">
-                    <Trash2 size={15} />
-                  </button>
-                </td>
               </tr>
-            ))}
+            )}
+            {visibleRecords.length === 0 && !loading && (
+              <tr><td colSpan={17} className="empty">No records found.</td></tr>
+            )}
+            {pagedRecords.map((r) =>
+              editingId === r.id ? (
+                <tr key={r.id} className="editing-row">
+                  <td><input className="edit-input" value={editDraft.project_name} onChange={(e) => updateDraft('project_name', e.target.value)} /></td>
+                  <td><input className="edit-input" value={editDraft.work_order} onChange={(e) => updateDraft('work_order', e.target.value)} /></td>
+                  <td><input className="edit-input narrow" value={editDraft.sno} onChange={(e) => updateDraft('sno', e.target.value)} /></td>
+                  <td><input className="edit-input" value={editDraft.exact_location} onChange={(e) => updateDraft('exact_location', e.target.value)} /></td>
+                  <td>
+                    <div className="edit-coords">
+                      <input className="edit-input narrow" placeholder="Lat" value={editDraft.latitude} onChange={(e) => updateDraft('latitude', e.target.value)} />
+                      <input className="edit-input narrow" placeholder="Lng" value={editDraft.longitude} onChange={(e) => updateDraft('longitude', e.target.value)} />
+                    </div>
+                  </td>
+                  <td><input className="edit-input" value={editDraft.village} onChange={(e) => updateDraft('village', e.target.value)} /></td>
+                  <td><input className="edit-input" value={editDraft.block} onChange={(e) => updateDraft('block', e.target.value)} /></td>
+                  <td><input className="edit-input" value={editDraft.assembly_constituency} onChange={(e) => updateDraft('assembly_constituency', e.target.value)} /></td>
+                  <td><input className="edit-input" value={editDraft.commissioning_date} onChange={(e) => updateDraft('commissioning_date', e.target.value)} /></td>
+                  <td><input className="edit-input" value={editDraft.module_serial} onChange={(e) => updateDraft('module_serial', e.target.value)} /></td>
+                  <td><input className="edit-input" value={editDraft.battery_serial} onChange={(e) => updateDraft('battery_serial', e.target.value)} /></td>
+                  <td><input className="edit-input" value={editDraft.luminaire_serial} onChange={(e) => updateDraft('luminaire_serial', e.target.value)} /></td>
+                  <td>
+                    <select className="edit-select" value={editDraft.rms} onChange={(e) => updateDraft('rms', e.target.value)}>
+                      <option value="YES">YES</option>
+                      <option value="NO">NO</option>
+                    </select>
+                  </td>
+                  <td><FilesCell record={r} /></td>
+                  <td>{formatCreated(r.created_at)}</td>
+                  <td>{r.submitted_by || '—'}</td>
+                  <td className="action-col">
+                    {editError && <div className="edit-error">{editError}</div>}
+                    <div className="edit-actions">
+                      <button className="btn-icon save" onClick={saveEdit} disabled={savingEdit} title="Save">
+                        <Check size={15} />
+                      </button>
+                      <button className="btn-icon" onClick={cancelEdit} disabled={savingEdit} title="Cancel">
+                        <X size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id}>
+                  <td>{r.project_name || '—'}</td>
+                  <td>{r.work_order || '—'}</td>
+                  <td>{r.sno || '—'}</td>
+                  <td>{r.exact_location || '—'}</td>
+                  <td>
+                    {r.latitude && r.longitude ? (
+                      <a
+                        className="coord-link"
+                        href={`https://maps.google.com/?q=${r.latitude},${r.longitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <MapPin size={12} /> {r.latitude}, {r.longitude}
+                      </a>
+                    ) : '—'}
+                  </td>
+                  <td>{r.village || r.gram_panchayat || '—'}</td>
+                  <td>{r.block || '—'}</td>
+                  <td>{r.assembly_constituency || '—'}</td>
+                  <td>{r.commissioning_date || '—'}</td>
+                  <td>{r.module_serial || '—'}</td>
+                  <td>{r.battery_serial || '—'}</td>
+                  <td>{r.luminaire_serial || '—'}</td>
+                  <td>
+                    <span className={`badge ${String(r.rms).toUpperCase() === 'YES' ? 'yes' : 'no'}`}>
+                      {r.rms || '—'}
+                    </span>
+                  </td>
+                  <td><FilesCell record={r} /></td>
+                  <td>{formatCreated(r.created_at)}</td>
+                  <td>{r.submitted_by || '—'}</td>
+                  <td className="action-col">
+                    <div className="row-actions">
+                      <button className="btn-icon" onClick={() => beginEdit(r)} title="Edit">
+                        <Pencil size={15} />
+                      </button>
+                      <button className="btn-icon danger" onClick={() => handleDelete(r.id)} title="Delete">
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            )}
           </tbody>
         </table>
       </div>
+
+      {total > 0 && (
+        <div className="dash-pagination">
+          <span className="page-info">
+            Showing <strong>{pageStart}</strong>–<strong>{pageEnd}</strong> of <strong>{total}</strong>
+          </span>
+          <div className="page-controls">
+            <button
+              className="page-btn"
+              onClick={() => setPage(1)}
+              disabled={page <= 1}
+              title="First page"
+            >
+              <ChevronsLeft size={16} />
+            </button>
+            <button
+              className="page-btn"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              title="Previous page"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="page-current">Page {page} / {pageCount}</span>
+            <button
+              className="page-btn"
+              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+              disabled={page >= pageCount}
+              title="Next page"
+            >
+              <ChevronRight size={16} />
+            </button>
+            <button
+              className="page-btn"
+              onClick={() => setPage(pageCount)}
+              disabled={page >= pageCount}
+              title="Last page"
+            >
+              <ChevronsRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
     </>
+  );
+}
+
+// Renders the uploaded files for one installation record as small,
+// clickable previews. Handles the preserved keys: site_image, signed_pdf,
+// and attachments (array). Each entry is { name, path, url, size, type }.
+function FilesCell({ record }) {
+  const site = record.site_image || null;
+  const pdf = record.signed_pdf || null;
+  const attachments = Array.isArray(record.attachments) ? record.attachments : [];
+
+  if (!site && !pdf && attachments.length === 0) {
+    return <span className="files-empty">—</span>;
+  }
+
+  const isImage = (f) =>
+    (f?.type && f.type.startsWith('image/')) ||
+    /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(f?.name || '');
+
+  return (
+    <div className="files-cell">
+      {site && (
+        isImage(site) ? (
+          <a
+            href={site.url}
+            target="_blank"
+            rel="noreferrer"
+            className="file-thumb"
+            title={site.name}
+          >
+            <img src={site.url} alt={site.name} />
+          </a>
+        ) : (
+          <a href={site.url} target="_blank" rel="noreferrer" className="file-pill" title={site.name}>
+            <ImageIcon size={12} /> Image
+          </a>
+        )
+      )}
+
+      {pdf && (
+        <a href={pdf.url} target="_blank" rel="noreferrer" className="file-pill pdf" title={pdf.name}>
+          <FileText size={12} /> PDF
+        </a>
+      )}
+
+      {attachments.map((f, i) => (
+        <a
+          key={`${f.name}-${i}`}
+          href={f.url}
+          target="_blank"
+          rel="noreferrer"
+          className="file-pill"
+          title={f.name}
+        >
+          <Paperclip size={12} /> {i + 1}
+        </a>
+      ))}
+    </div>
   );
 }
 
@@ -655,6 +952,13 @@ function StatCard({ label, value }) {
       <div className="stat-label">{label}</div>
     </div>
   );
+}
+
+function formatCreated(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 function isEmptyRow(row) {
