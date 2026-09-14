@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
-  ArrowLeft, LogOut, Plus, Trash2, RefreshCw, Upload, ClipboardList,
-  Share2, Download, ChevronDown, ChevronRight, Package, CheckCircle2, Clock,
+  ArrowLeft, LogOut, Trash2, RefreshCw, Upload, ClipboardList,
+  Share2, Download, ChevronDown, ChevronRight, Package, CheckCircle2, Clock, FileUp,
 } from 'lucide-react';
 import Logo from './Logo';
 import { getCurrentUser } from '../utils/auth';
@@ -18,6 +18,7 @@ import {
   summarizeItems,
   parseSerialFile,
 } from '../utils/workorders';
+import { uploadWorkOrderPdf, listWorkOrderPdfs, deleteWorkOrderPdf } from '../utils/storageUploads';
 import './WorkOrders.css';
 
 function WorkOrders({ onBack, onLogout }) {
@@ -25,12 +26,8 @@ function WorkOrders({ onBack, onLogout }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newDesc, setNewDesc] = useState('');
   const [expandedId, setExpandedId] = useState(null);
-
-  const currentUser = getCurrentUser();
+  const [searchQuery, setSearchQuery] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,31 +45,6 @@ function WorkOrders({ onBack, onLogout }) {
     load();
   }, [load]);
 
-  const handleCreate = useCallback(async () => {
-    if (!newName.trim()) {
-      setMessage({ type: 'error', text: 'Enter a work order name first.' });
-      return;
-    }
-    setCreating(true);
-    setMessage(null);
-    try {
-      const created = await createWorkOrder({
-        name: newName,
-        description: newDesc,
-        createdBy: currentUser?.name || currentUser?.email || '',
-      });
-      setNewName('');
-      setNewDesc('');
-      setMessage({ type: 'success', text: `Work order "${created.name}" created.` });
-      await load();
-      if (created) setExpandedId(created.id);
-    } catch (err) {
-      setMessage({ type: 'error', text: `Create failed: ${err.message}` });
-    } finally {
-      setCreating(false);
-    }
-  }, [newName, newDesc, currentUser, load]);
-
   const handleDelete = useCallback(async (id) => {
     if (!window.confirm('Delete this work order and all its serials? This cannot be undone.')) return;
     try {
@@ -84,14 +56,23 @@ function WorkOrders({ onBack, onLogout }) {
   }, []);
 
   const handleShareForm = useCallback(async () => {
-    const url = `${window.location.origin}${window.location.pathname}?form=workorder`;
+    const url = `${window.location.origin}${window.location.pathname}?form=install`;
     try {
       await navigator.clipboard.writeText(url);
-      setMessage({ type: 'success', text: `Shareable form link copied: ${url}` });
+      setMessage({ type: 'success', text: `Shareable PDI form link copied: ${url}` });
     } catch {
-      window.prompt('Copy this shareable form link:', url);
+      window.prompt('Copy this shareable PDI form link:', url);
     }
   }, []);
+
+  const filteredOrders = useMemo(() => {
+    if (!searchQuery.trim()) return orders;
+    const query = searchQuery.toLowerCase();
+    return orders.filter((order) => 
+      order.name.toLowerCase().includes(query) ||
+      (order.description && order.description.toLowerCase().includes(query))
+    );
+  }, [orders, searchQuery]);
 
   return (
     <div className="wo-page">
@@ -111,9 +92,9 @@ function WorkOrders({ onBack, onLogout }) {
             </div>
           </div>
           <div className="header-right">
-            <button className="header-btn" onClick={handleShareForm} title="Copy shareable form link">
+            <button className="header-btn" onClick={handleShareForm} title="Share PDI form link">
               <Share2 size={18} />
-              <span>Share Form</span>
+              <span>Share PDI Form</span>
             </button>
             <button className="header-btn logout" onClick={onLogout} title="Logout">
               <LogOut size={18} />
@@ -124,43 +105,39 @@ function WorkOrders({ onBack, onLogout }) {
       </header>
 
       <div className="wo-body">
-        <div className="wo-create">
-          <h2><Plus size={18} /> New Work Order</h2>
-          <div className="wo-create-row">
-            <input
-              type="text"
-              placeholder="Work order name (e.g., XYZ)"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="Description (optional)"
-              value={newDesc}
-              onChange={(e) => setNewDesc(e.target.value)}
-            />
-            <button className="btn-primary" onClick={handleCreate} disabled={creating}>
-              <Plus size={16} /> {creating ? 'Creating…' : 'Create'}
-            </button>
-          </div>
-          {message && <div className={`msg ${message.type}`}>{message.text}</div>}
+        <div className="wo-info-banner">
+          <p>Work orders are automatically created when PDI (Pre-Dispatch Inspection) forms are submitted. Use the "Share PDI Form" button to send the form link to field users.</p>
         </div>
 
         <div className="wo-list-head">
           <h2><ClipboardList size={18} /> Work Orders</h2>
-          <button className="btn-refresh" onClick={load}>
-            <RefreshCw size={16} /> {loading ? 'Loading…' : 'Refresh'}
-          </button>
+          <div className="wo-list-controls">
+            <input
+              type="text"
+              className="wo-search-input"
+              placeholder="Search work orders..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <button className="btn-refresh" onClick={load}>
+              <RefreshCw size={16} /> {loading ? 'Loading…' : 'Refresh'}
+            </button>
+          </div>
         </div>
 
+        {message && <div className={`msg ${message.type}`}>{message.text}</div>}
         {error && <div className="msg error">{error}</div>}
 
-        {orders.length === 0 && !loading && (
-          <div className="wo-empty">No work orders yet. Create one above.</div>
+        {filteredOrders.length === 0 && !loading && (
+          <div className="wo-empty">
+            {searchQuery.trim() 
+              ? `No work orders found matching "${searchQuery}"`
+              : 'No work orders yet. Work orders are created automatically from PDI forms.'}
+          </div>
         )}
 
         <div className="wo-list">
-          {orders.map((order) => (
+          {filteredOrders.map((order) => (
             <WorkOrderCard
               key={order.id}
               order={order}
@@ -178,12 +155,15 @@ function WorkOrders({ onBack, onLogout }) {
 export default WorkOrders;
 
 // A single expandable work order: shows summary stats and, when open, the
-// per-category serial upload + list of items with used/available status.
+// per-category breakdown and list of items with used/available status.
 function WorkOrderCard({ order, expanded, onToggle, onDelete }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [uploadMsg, setUploadMsg] = useState(null);
+  const [pdfFiles, setPdfFiles] = useState([]);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [loadingPdfs, setLoadingPdfs] = useState(false);
+  const pdfInputRef = useRef(null);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -197,35 +177,57 @@ function WorkOrderCard({ order, expanded, onToggle, onDelete }) {
     }
   }, [order.id]);
 
+  const loadPdfs = useCallback(async () => {
+    setLoadingPdfs(true);
+    try {
+      const pdfs = await listWorkOrderPdfs(order.id);
+      setPdfFiles(pdfs);
+    } catch (err) {
+      console.warn('Could not load PDFs:', err);
+      setPdfFiles([]);
+    } finally {
+      setLoadingPdfs(false);
+    }
+  }, [order.id]);
+
+  // Load items immediately when component mounts to fix 0/0/0 display bug
   useEffect(() => {
-    if (expanded && items.length === 0 && !loading) loadItems();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded]);
+    loadItems();
+  }, [loadItems]);
+
+  // Load PDFs when expanded
+  useEffect(() => {
+    if (expanded) {
+      loadPdfs();
+    }
+  }, [expanded, loadPdfs]);
 
   const { summary, total, used, pending } = useMemo(() => summarizeItems(items), [items]);
 
-  const handleUpload = useCallback(
-    async (category, file) => {
-      if (!file) return;
-      setUploadMsg(null);
-      try {
-        const serials = await parseSerialFile(file);
-        if (serials.length === 0) {
-          setUploadMsg({ type: 'error', text: 'No serials found in that file.' });
-          return;
-        }
-        const { inserted } = await insertWorkOrderItems(order.id, category, serials);
-        setUploadMsg({
-          type: 'success',
-          text: `Added ${inserted} new ${CATEGORY_LABELS[category]} serial(s) (${serials.length} read).`,
-        });
-        await loadItems();
-      } catch (err) {
-        setUploadMsg({ type: 'error', text: `Upload failed: ${err.message}` });
-      }
-    },
-    [order.id, loadItems]
-  );
+  const handlePdfUpload = useCallback(async (file) => {
+    if (!file) return;
+    setUploadingPdf(true);
+    setError(null);
+    try {
+      await uploadWorkOrderPdf(order.id, file);
+      await loadPdfs(); // Reload PDF list
+      setError(null);
+    } catch (err) {
+      setError(`PDF upload failed: ${err.message}`);
+    } finally {
+      setUploadingPdf(false);
+    }
+  }, [order.id, loadPdfs]);
+
+  const handlePdfDelete = useCallback(async (path) => {
+    if (!window.confirm('Delete this PDF file? This cannot be undone.')) return;
+    try {
+      await deleteWorkOrderPdf(path);
+      await loadPdfs(); // Reload PDF list
+    } catch (err) {
+      setError(`PDF deletion failed: ${err.message}`);
+    }
+  }, [loadPdfs]);
 
   const handleRevert = useCallback(async (id) => {
     try {
@@ -283,6 +285,25 @@ function WorkOrderCard({ order, expanded, onToggle, onDelete }) {
           <span className="wo-chip used"><CheckCircle2 size={13} /> {used} used</span>
           <span className="wo-chip pending"><Clock size={13} /> {pending} available</span>
           <button
+            className="btn-icon pdf-upload-btn"
+            onClick={(e) => { e.stopPropagation(); pdfInputRef.current?.click(); }}
+            title="Upload PDF for this work order"
+            disabled={uploadingPdf}
+          >
+            <FileUp size={15} />
+          </button>
+          <input
+            ref={pdfInputRef}
+            type="file"
+            accept=".pdf,application/pdf"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handlePdfUpload(file);
+              e.target.value = '';
+            }}
+          />
+          <button
             className="btn-icon danger"
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
             title="Delete work order"
@@ -294,18 +315,50 @@ function WorkOrderCard({ order, expanded, onToggle, onDelete }) {
 
       {expanded && (
         <div className="wo-card-body">
-          <div className="wo-uploads">
-            {WO_CATEGORIES.map((cat) => (
-              <CategoryUpload
-                key={cat.key}
-                category={cat}
-                stats={summary[cat.key]}
-                onUpload={(file) => handleUpload(cat.key, file)}
-              />
-            ))}
+          <div className="wo-summary-tiles">
+            <div className="wo-summary-tile">
+              <div className="wo-summary-label">Solar Panels</div>
+              <div className="wo-summary-count">
+                <span className="used">{summary.module?.used || 0}</span> / {summary.module?.total || 0}
+              </div>
+            </div>
+            <div className="wo-summary-tile">
+              <div className="wo-summary-label">Batteries</div>
+              <div className="wo-summary-count">
+                <span className="used">{summary.battery?.used || 0}</span> / {summary.battery?.total || 0}
+              </div>
+            </div>
+            <div className="wo-summary-tile">
+              <div className="wo-summary-label">Luminaires</div>
+              <div className="wo-summary-count">
+                <span className="used">{summary.luminaire?.used || 0}</span> / {summary.luminaire?.total || 0}
+              </div>
+            </div>
           </div>
 
-          {uploadMsg && <div className={`msg ${uploadMsg.type}`}>{uploadMsg.text}</div>}
+          {/* PDF Files Section */}
+          {pdfFiles.length > 0 && (
+            <div className="wo-pdf-section">
+              <h3 className="wo-pdf-heading">📄 Attached PDFs ({pdfFiles.length})</h3>
+              <div className="wo-pdf-list">
+                {pdfFiles.map((pdf) => (
+                  <div key={pdf.path} className="wo-pdf-item">
+                    <a href={pdf.url} target="_blank" rel="noopener noreferrer" className="wo-pdf-link">
+                      {pdf.name}
+                    </a>
+                    <button
+                      className="btn-icon danger"
+                      onClick={() => handlePdfDelete(pdf.path)}
+                      title="Delete PDF"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {error && <div className="msg error">{error}</div>}
 
           <div className="wo-items-toolbar">
@@ -331,7 +384,7 @@ function WorkOrderCard({ order, expanded, onToggle, onDelete }) {
               <tbody>
                 {loading && <tr><td colSpan={5} className="empty">Loading…</td></tr>}
                 {!loading && items.length === 0 && (
-                  <tr><td colSpan={5} className="empty">No serials yet. Upload a CSV above.</td></tr>
+                  <tr><td colSpan={5} className="empty">No serials yet. Serials are added automatically from PDI forms.</td></tr>
                 )}
                 {items.map((it) => (
                   <tr key={it.id} className={it.status === 'used' ? 'row-used' : ''}>
@@ -364,31 +417,4 @@ function WorkOrderCard({ order, expanded, onToggle, onDelete }) {
   );
 }
 
-// Per-category CSV upload tile with a small progress summary.
-function CategoryUpload({ category, stats, onUpload }) {
-  const inputRef = useRef(null);
-  const { total = 0, used = 0 } = stats || {};
-  const onChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) onUpload(file);
-    e.target.value = '';
-  };
-  return (
-    <div className="wo-upload-tile">
-      <div className="wo-upload-title">{category.label}</div>
-      <div className="wo-upload-count">
-        <strong>{used}</strong> / {total} used
-      </div>
-      <button className="btn-upload" onClick={() => inputRef.current?.click()}>
-        <Upload size={14} /> Upload CSV
-      </button>
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".csv,.tsv,.txt,.xlsx,.xls,text/csv"
-        style={{ display: 'none' }}
-        onChange={onChange}
-      />
-    </div>
-  );
-}
+

@@ -10,6 +10,9 @@ import {
   fetchWorkOrders,
   fetchWorkOrderItems,
   markItemsUsed,
+  findOrCreateWorkOrder,
+  insertWorkOrderItems,
+  checkSerialUsageAcrossWorkOrders,
 } from '../utils/workorders';
 import { uploadInstallationFiles } from '../utils/storageUploads';
 import { getCurrentUser, isBuiltInAdmin } from '../utils/auth';
@@ -166,6 +169,7 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
   const [error, setError] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [serialWarnings, setSerialWarnings] = useState([]);
 
   const reviewIndex = STEPS.length; // review is the final "virtual" step
   const isReview = current === reviewIndex;
@@ -185,6 +189,21 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
     })();
     return () => { cancelled = true; };
   }, [currentUser?.email, onLogout]);
+
+  // Add exit confirmation to prevent accidental data loss
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      // Only show warning if form has unsaved data and hasn't been submitted
+      if (!submitted && (current > 0 || Object.values(form).some(v => v !== '' && v != null))) {
+        e.preventDefault();
+        e.returnValue = ''; // Chrome requires returnValue to be set
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [form, current, submitted]);
 
   const update = useCallback((key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -252,6 +271,41 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
     setCurrent((c) => Math.max(c - 1, 0));
   }, []);
 
+  const validateSerials = useCallback(async () => {
+    const warnings = [];
+    
+    for (const [fieldKey, category] of Object.entries(WO_FIELD_TO_CATEGORY)) {
+      const serial = String(form[fieldKey] ?? '').trim();
+      if (!serial) continue;
+      
+      try {
+        const usage = await checkSerialUsageAcrossWorkOrders(serial, category);
+        if (usage.isUsed) {
+          const categoryLabel = category === 'module' ? 'Solar Panel' : 
+                               category === 'battery' ? 'Battery' : 'Luminaire';
+          warnings.push(
+            `⚠️ ${categoryLabel} serial "${serial}" is already used in work order "${usage.workOrder}"${
+              usage.usedBy ? ` by ${usage.usedBy}` : ''
+            }`
+          );
+        }
+      } catch (err) {
+        console.warn(`Could not validate serial ${serial}:`, err);
+      }
+    }
+    
+    return warnings;
+  }, [form]);
+
+  const handleSubmitClick = useCallback(async () => {
+    setError(null);
+    setSubmitting(true);
+    const warnings = await validateSerials();
+    setSerialWarnings(warnings);
+    setSubmitting(false);
+    setShowConfirm(true);
+  }, [validateSerials]);
+
   // A step is reachable only when every step before it is complete. This
   // prevents jumping ahead via the stepper and skipping required fields.
   const isStepReachable = useCallback(
@@ -300,6 +354,40 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
         }
       }
 
+      // Auto-create or find work order if work_order field is filled
+      let workOrderForSubmission = selectedWorkOrder;
+      const workOrderName = String(form.work_order ?? '').trim();
+      
+      if (workOrderName && !selectedWorkOrder) {
+        try {
+          workOrderForSubmission = await findOrCreateWorkOrder({
+            name: workOrderName,
+            description: `Auto-created from PDI submission`,
+            createdBy: currentUser?.name || currentUser?.email || '',
+          });
+          
+          // Add the serial numbers to this work order if they're filled
+          const serialsToAdd = {};
+          Object.entries(WO_FIELD_TO_CATEGORY).forEach(([fieldKey, category]) => {
+            const serial = String(form[fieldKey] ?? '').trim();
+            if (serial) {
+              if (!serialsToAdd[category]) serialsToAdd[category] = [];
+              serialsToAdd[category].push(serial);
+            }
+          });
+          
+          // Insert serials for each category
+          for (const [category, serials] of Object.entries(serialsToAdd)) {
+            if (serials.length > 0) {
+              await insertWorkOrderItems(workOrderForSubmission.id, category, serials);
+            }
+          }
+        } catch (err) {
+          // Non-fatal: continue with installation submission
+          console.warn('Could not auto-create work order:', err);
+        }
+      }
+
       // Upload any selected files first, then attach the returned metadata
       // (keys preserved: site_image / signed_pdf / attachments).
       const uploaded = await uploadInstallationFiles(files, setProgress);
@@ -315,18 +403,28 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
       if (inserted === 0) {
         setError('Please fill in at least a few fields before submitting.');
       } else {
-        // If a work order is selected, mark the chosen serials as used in a
-        // single batched request to keep the request count low.
-        if (selectedWorkOrder) {
+        // If a work order is selected or was auto-created, mark the chosen serials as used
+        const finalWorkOrder = workOrderForSubmission || selectedWorkOrder;
+        if (finalWorkOrder) {
           const usedBy = currentUser?.name || currentUser?.email || '';
+          
+          // Fetch the latest items to get the IDs (needed if work order was just created)
+          const latestItems = await fetchWorkOrderItems(finalWorkOrder.id);
+          const itemsMap = {};
+          for (const it of latestItems) {
+            if (!itemsMap[it.category]) itemsMap[it.category] = {};
+            itemsMap[it.category][it.serial] = it;
+          }
+          
           const ids = Object.entries(WO_FIELD_TO_CATEGORY)
             .map(([fieldKey, category]) => {
               const serial = String(form[fieldKey] ?? '').trim();
               if (!serial) return null;
-              const item = (woItems[category] || []).find((it) => it.serial === serial);
+              const item = itemsMap[category]?.[serial];
               return item ? item.id : null;
             })
             .filter(Boolean);
+            
           if (ids.length > 0) {
             try {
               await markItemsUsed(ids, usedBy);
@@ -656,11 +754,11 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
             <button
               type="button"
               className="pf-btn pf-btn-primary"
-              onClick={() => setShowConfirm(true)}
+              onClick={handleSubmitClick}
               disabled={submitting}
             >
               {submitting ? (
-                <><Loader2 size={16} className="pf-spin" /> Submitting…</>
+                <><Loader2 size={16} className="pf-spin" /> Validating…</>
               ) : (
                 <><Send size={16} /> Submit</>
               )}
@@ -676,6 +774,21 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
             <AlertCircle size={40} className="pf-modal-icon" />
             <h3>Submit these details?</h3>
             <p>Please make sure everything looks correct. You can go back and edit if needed.</p>
+            
+            {serialWarnings.length > 0 && (
+              <div className="pf-modal-warnings">
+                <strong>⚠️ Serial Number Warnings:</strong>
+                <ul>
+                  {serialWarnings.map((warning, idx) => (
+                    <li key={idx}>{warning}</li>
+                  ))}
+                </ul>
+                <p style={{ marginTop: '8px', fontSize: '13px', color: '#b45309' }}>
+                  These serials are already in use. You can still submit, but please verify this is correct.
+                </p>
+              </div>
+            )}
+            
             <div className="pf-modal-actions">
               <button className="pf-btn pf-btn-ghost" onClick={() => setShowConfirm(false)}>
                 Review again

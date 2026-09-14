@@ -4,6 +4,9 @@ import { supabase } from './supabase';
 // Create it in the Supabase dashboard (or via SQL) as a PUBLIC bucket.
 export const INSTALLATION_BUCKET = 'installation-files';
 
+// Supabase Storage bucket for work order PDFs.
+export const WORK_ORDER_BUCKET = 'work-order-pdfs';
+
 // Build a safe, unique storage path for an uploaded file.
 // Files are grouped by the logical key (site_image / signed_pdf / attachments)
 // so the bucket stays organised and the keys are preserved.
@@ -63,4 +66,63 @@ export async function uploadInstallationFiles(files = {}, onProgress) {
   }
 
   return result;
+}
+
+// Upload a PDF file for a work order. Returns metadata { name, path, url, size, type }.
+export async function uploadWorkOrderPdf(workOrderId, file) {
+  if (!file) throw new Error('No file provided');
+  if (file.type !== 'application/pdf') throw new Error('Only PDF files are allowed');
+  
+  const stamp = Date.now();
+  const rand = Math.random().toString(36).slice(2, 8);
+  const safeName = (file.name || 'document.pdf')
+    .replace(/[^\w.\-]+/g, '_')
+    .slice(-80);
+  const path = `wo_${workOrderId}/${stamp}_${rand}_${safeName}`;
+  
+  const { error } = await supabase.storage
+    .from(WORK_ORDER_BUCKET)
+    .upload(path, file, { cacheControl: '3600', upsert: false });
+    
+  if (error) throw new Error(`Upload failed for ${file.name}: ${error.message}`);
+
+  const { data } = supabase.storage.from(WORK_ORDER_BUCKET).getPublicUrl(path);
+  return {
+    name: file.name,
+    path,
+    url: data?.publicUrl || '',
+    size: file.size,
+    type: file.type,
+  };
+}
+
+// List all PDF files for a specific work order
+export async function listWorkOrderPdfs(workOrderId) {
+  const prefix = `wo_${workOrderId}/`;
+  const { data, error } = await supabase.storage
+    .from(WORK_ORDER_BUCKET)
+    .list(prefix);
+    
+  if (error) throw new Error(`Failed to list PDFs: ${error.message}`);
+  
+  return (data || []).map(file => {
+    const path = `${prefix}${file.name}`;
+    const { data: urlData } = supabase.storage.from(WORK_ORDER_BUCKET).getPublicUrl(path);
+    return {
+      name: file.name,
+      path,
+      url: urlData?.publicUrl || '',
+      size: file.metadata?.size || 0,
+      created_at: file.created_at,
+    };
+  });
+}
+
+// Delete a PDF file from work order storage
+export async function deleteWorkOrderPdf(path) {
+  const { error } = await supabase.storage
+    .from(WORK_ORDER_BUCKET)
+    .remove([path]);
+    
+  if (error) throw new Error(`Failed to delete PDF: ${error.message}`);
 }

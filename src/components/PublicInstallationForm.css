@@ -864,3 +864,31 @@
   font-weight: 600;
   color: #b45309;
 }
+
+
+.pf-modal-warnings {
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+  text-align: left;
+}
+
+.pf-modal-warnings strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #92400e;
+}
+
+.pf-modal-warnings ul {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+
+.pf-modal-warnings li {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #78350f;
+}

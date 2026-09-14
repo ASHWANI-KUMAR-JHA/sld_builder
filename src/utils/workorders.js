@@ -41,6 +41,29 @@ export async function createWorkOrder({ name, description = '', createdBy = '' }
   return data?.[0] || null;
 }
 
+// Find an existing work order by name (case-insensitive) or create it if it doesn't exist.
+export async function findOrCreateWorkOrder({ name, description = '', createdBy = '' }) {
+  const clean = String(name || '').trim();
+  if (!clean) throw new Error('Work order name is required.');
+  
+  // First, try to find existing work order
+  const { data: existing, error: findError } = await supabase
+    .from(WORK_ORDERS_TABLE)
+    .select('*')
+    .ilike('name', clean)
+    .limit(1);
+  
+  if (findError) throw findError;
+  
+  // If found, return it
+  if (existing && existing.length > 0) {
+    return existing[0];
+  }
+  
+  // Otherwise, create new work order
+  return await createWorkOrder({ name: clean, description, createdBy });
+}
+
 export async function deleteWorkOrder(id) {
   const { error } = await supabase.from(WORK_ORDERS_TABLE).delete().eq('id', id);
   if (error) throw error;
@@ -158,4 +181,73 @@ export function summarizeItems(items) {
 export async function parseSerialFile(file) {
   const rows = await readSheetRows(file);
   return extractIdList(rows);
+}
+
+
+// Check if a serial number is already used in ANY work order.
+// Returns { isUsed: boolean, workOrder: string|null, usedBy: string|null, usedAt: string|null }
+export async function checkSerialUsageAcrossWorkOrders(serial, category) {
+  const cleanSerial = String(serial || '').trim();
+  if (!cleanSerial) return { isUsed: false, workOrder: null, usedBy: null, usedAt: null };
+
+  // Query all work order items with this serial and category
+  const { data, error } = await supabase
+    .from(WORK_ORDER_ITEMS_TABLE)
+    .select(`
+      *,
+      work_orders:work_order_id (name)
+    `)
+    .eq('category', category)
+    .ilike('serial', cleanSerial)
+    .eq('status', 'used')
+    .limit(1);
+
+  if (error) throw error;
+
+  if (data && data.length > 0) {
+    const item = data[0];
+    return {
+      isUsed: true,
+      workOrder: item.work_orders?.name || 'Unknown',
+      usedBy: item.used_by,
+      usedAt: item.used_at,
+    };
+  }
+
+  return { isUsed: false, workOrder: null, usedBy: null, usedAt: null };
+}
+
+// Check multiple serial numbers at once for efficiency
+// Returns a map: { serial: { isUsed, workOrder, usedBy, usedAt } }
+export async function checkMultipleSerialsUsage(serials, category) {
+  const cleanSerials = serials.map(s => String(s || '').trim()).filter(Boolean);
+  if (cleanSerials.length === 0) return {};
+
+  const { data, error } = await supabase
+    .from(WORK_ORDER_ITEMS_TABLE)
+    .select(`
+      *,
+      work_orders:work_order_id (name)
+    `)
+    .eq('category', category)
+    .in('serial', cleanSerials)
+    .eq('status', 'used');
+
+  if (error) throw error;
+
+  const result = {};
+  for (const serial of cleanSerials) {
+    result[serial] = { isUsed: false, workOrder: null, usedBy: null, usedAt: null };
+  }
+
+  for (const item of data || []) {
+    result[item.serial] = {
+      isUsed: true,
+      workOrder: item.work_orders?.name || 'Unknown',
+      usedBy: item.used_by,
+      usedAt: item.used_at,
+    };
+  }
+
+  return result;
 }
