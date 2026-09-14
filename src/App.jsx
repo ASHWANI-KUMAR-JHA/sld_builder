@@ -9,6 +9,7 @@ import SLDBuilder from './components/SLDBuilder/SLDBuilder';
 import FlashReport from './components/FlashReport';
 import JCR from './components/JCR';
 import MergePDF from './components/MergePDF';
+import WorkOrders from './components/WorkOrders';
 import InstallationRegister from './components/InstallationRegister';
 import PublicInstallationForm from './components/PublicInstallationForm';
 import GeoDebug from './components/GeoDebug';
@@ -24,6 +25,14 @@ import './App.css';
 const isPublicForm =
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('form') === 'install';
+
+// Optional work order name from the URL (?form=install&workorder=test). When
+// present, the installation form constrains the equipment serials to that
+// work order's uploaded master list.
+const workOrderParam =
+  typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('workorder') || ''
+    : '';
 
 // Standalone geolocation diagnostic screen. Open with ?geo=debug in the URL.
 const isGeoDebug =
@@ -78,7 +87,7 @@ function App() {
 
   // Shareable installation form — opens (after login) with the user's name on top.
   if (isPublicForm) {
-    return <PublicInstallationForm onLogout={handleLogout} />;
+    return <PublicInstallationForm onLogout={handleLogout} initialWorkOrder={workOrderParam} />;
   }
 
   // Show the interactive SLD builder page
@@ -94,6 +103,11 @@ function App() {
   // Show the Merge PDF page
   if (currentPage === 'mergePdf') {
     return <MergePDF onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
+  }
+
+  // Show the Work Orders page
+  if (currentPage === 'workOrders') {
+    return <WorkOrders onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
   }
 
   // Show the JCR (Joint Commissioning Report) page
@@ -121,6 +135,7 @@ function App() {
         onBuilderClick={() => setCurrentPage('builder')}
         onFlashReportClick={() => setCurrentPage('flashReport')}
         onMergePdfClick={() => setCurrentPage('mergePdf')}
+        onWorkOrdersClick={() => setCurrentPage('workOrders')}
         onInstallationsClick={() => setCurrentPage('installations')}
         onJcrClick={() => setCurrentPage('jcr')}
         onUsersClick={() => setCurrentPage('users')}

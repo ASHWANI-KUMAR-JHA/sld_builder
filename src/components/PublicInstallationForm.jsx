@@ -6,6 +6,11 @@ import {
 } from 'lucide-react';
 import Logo from './Logo';
 import { emptyInstallation, insertInstallations } from '../utils/installations';
+import {
+  fetchWorkOrders,
+  fetchWorkOrderItems,
+  markItemsUsed,
+} from '../utils/workorders';
 import { uploadInstallationFiles } from '../utils/storageUploads';
 import { getCurrentUser, isBuiltInAdmin } from '../utils/auth';
 import { getUserStatusByEmail } from '../utils/users';
@@ -87,9 +92,72 @@ function isStepComplete(step, form) {
   return step.required.every((k) => String(form[k] ?? '').trim() !== '');
 }
 
-function PublicInstallationForm({ onLogout }) {
+// Maps the equipment serial field keys to the work order item categories.
+const WO_FIELD_TO_CATEGORY = {
+  module_serial: 'module',
+  battery_serial: 'battery',
+  luminaire_serial: 'luminaire',
+};
+
+function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
   const currentUser = getCurrentUser();
   const [form, setForm] = useState(() => emptyInstallation());
+
+  // ===== Work order integration =====
+  // The list of saved work orders (for the dropdown selector).
+  const [workOrders, setWorkOrders] = useState([]);
+  // The currently selected work order object (or null for free-entry mode).
+  const [selectedWorkOrder, setSelectedWorkOrder] = useState(null);
+  // Available (unused) serials for the selected work order, grouped by category.
+  const [woItems, setWoItems] = useState({ module: [], battery: [], luminaire: [] });
+  const [woLoading, setWoLoading] = useState(false);
+
+  // Load the saved work orders once so the dropdown can be populated and the
+  // URL param (?workorder=test) can be matched by name.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchWorkOrders();
+        if (cancelled) return;
+        setWorkOrders(list);
+        if (initialWorkOrder) {
+          const match = list.find(
+            (o) => o.name.toLowerCase() === initialWorkOrder.toLowerCase()
+          );
+          if (match) setSelectedWorkOrder(match);
+        }
+      } catch {
+        // Work orders are optional; ignore load failures.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [initialWorkOrder]);
+
+  // Load the available serials whenever the selected work order changes.
+  const loadWoItems = useCallback(async (workOrderId) => {
+    if (!workOrderId) {
+      setWoItems({ module: [], battery: [], luminaire: [] });
+      return;
+    }
+    setWoLoading(true);
+    try {
+      const items = await fetchWorkOrderItems(workOrderId);
+      const grouped = { module: [], battery: [], luminaire: [] };
+      for (const it of items) {
+        if (it.status === 'available' && grouped[it.category]) grouped[it.category].push(it);
+      }
+      setWoItems(grouped);
+    } catch {
+      setWoItems({ module: [], battery: [], luminaire: [] });
+    } finally {
+      setWoLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWoItems(selectedWorkOrder?.id || null);
+  }, [selectedWorkOrder, loadWoItems]);
   // Selected (not-yet-uploaded) files. Keys preserved: site_image, signed_pdf, attachments.
   const [files, setFiles] = useState({ site_image: null, signed_pdf: null, attachments: [] });
   const [current, setCurrent] = useState(0); // 0..STEPS.length (last index = review)
@@ -121,6 +189,31 @@ function PublicInstallationForm({ onLogout }) {
   const update = useCallback((key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   }, []);
+
+  // Select a work order by id. Also stamps its name into the work_order field
+  // and clears any equipment serials picked for a previous work order.
+  const selectWorkOrder = useCallback((id) => {
+    const wo = workOrders.find((o) => o.id === id) || null;
+    setSelectedWorkOrder(wo);
+    setForm((prev) => ({
+      ...prev,
+      work_order: wo ? wo.name : prev.work_order,
+      module_serial: '',
+      battery_serial: '',
+      luminaire_serial: '',
+    }));
+  }, [workOrders]);
+
+  // When a work order is selected, keep the work_order field in sync with it.
+  useEffect(() => {
+    if (selectedWorkOrder) {
+      setForm((prev) =>
+        prev.work_order === selectedWorkOrder.name
+          ? prev
+          : { ...prev, work_order: selectedWorkOrder.name }
+      );
+    }
+  }, [selectedWorkOrder]);
 
   // Set a single-file field (site_image / signed_pdf).
   const setSingleFile = useCallback((key, file) => {
@@ -222,6 +315,26 @@ function PublicInstallationForm({ onLogout }) {
       if (inserted === 0) {
         setError('Please fill in at least a few fields before submitting.');
       } else {
+        // If a work order is selected, mark the chosen serials as used in a
+        // single batched request to keep the request count low.
+        if (selectedWorkOrder) {
+          const usedBy = currentUser?.name || currentUser?.email || '';
+          const ids = Object.entries(WO_FIELD_TO_CATEGORY)
+            .map(([fieldKey, category]) => {
+              const serial = String(form[fieldKey] ?? '').trim();
+              if (!serial) return null;
+              const item = (woItems[category] || []).find((it) => it.serial === serial);
+              return item ? item.id : null;
+            })
+            .filter(Boolean);
+          if (ids.length > 0) {
+            try {
+              await markItemsUsed(ids, usedBy);
+            } catch {
+              // Non-fatal: the installation is already saved.
+            }
+          }
+        }
         setSubmitted(true);
       }
     } catch (err) {
@@ -230,14 +343,20 @@ function PublicInstallationForm({ onLogout }) {
       setSubmitting(false);
       setProgress(null);
     }
-  }, [form, files, currentUser, onLogout]);
+  }, [form, files, currentUser, onLogout, selectedWorkOrder, woItems]);
 
   const submitAnother = () => {
-    setForm(emptyInstallation());
+    // Preserve the selected work order across submissions and refresh its
+    // available serials so the ones just used drop out of the dropdowns.
+    setForm({
+      ...emptyInstallation(),
+      ...(selectedWorkOrder ? { work_order: selectedWorkOrder.name } : {}),
+    });
     setFiles({ site_image: null, signed_pdf: null, attachments: [] });
     setCurrent(0);
     setSubmitted(false);
     setError(null);
+    if (selectedWorkOrder) loadWoItems(selectedWorkOrder.id);
   };
 
   if (submitted) {
@@ -349,6 +468,30 @@ function PublicInstallationForm({ onLogout }) {
                 </p>
               </div>
 
+              {step.id === 'project' && workOrders.length > 0 && (
+                <div className="pf-field pf-field-full pf-wo-select">
+                  <label htmlFor="pf-workorder">
+                    Work Order
+                    <span className="pf-count">
+                      {selectedWorkOrder ? 'serials restricted to this order' : 'optional'}
+                    </span>
+                  </label>
+                  <select
+                    id="pf-workorder"
+                    value={selectedWorkOrder?.id || ''}
+                    onChange={(e) => selectWorkOrder(e.target.value)}
+                  >
+                    <option value="">— No work order (free entry) —</option>
+                    {workOrders.map((o) => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
+                  <span className="pf-help">
+                    Pick a work order to choose equipment serials from its uploaded list.
+                  </span>
+                </div>
+              )}
+
               {step.id === 'location' && (
                 <SiteImageField
                   file={files.site_image}
@@ -406,6 +549,42 @@ function PublicInstallationForm({ onLogout }) {
                       />
                       {f.help && <span className="pf-help">{f.help}</span>}
                     </div>
+                  ) : selectedWorkOrder && WO_FIELD_TO_CATEGORY[f.key] ? (
+                    (() => {
+                      const category = WO_FIELD_TO_CATEGORY[f.key];
+                      const options = woItems[category] || [];
+                      // Keep the current value visible even if it's the one just
+                      // picked (it stays "available" until submit).
+                      return (
+                        <div className="pf-field" key={f.key}>
+                          <label htmlFor={f.key}>
+                            {f.label}
+                            {step.required?.includes(f.key) && <span className="pf-req">*</span>}
+                            <span className="pf-count">{options.length} available</span>
+                          </label>
+                          <select
+                            id={f.key}
+                            value={form[f.key] ?? ''}
+                            onChange={(e) => update(f.key, e.target.value)}
+                            disabled={woLoading || options.length === 0}
+                          >
+                            <option value="">
+                              {woLoading
+                                ? 'Loading…'
+                                : options.length === 0
+                                  ? 'No serials available'
+                                  : `— Select ${f.label} —`}
+                            </option>
+                            {options.map((it) => (
+                              <option key={it.id} value={it.serial}>{it.serial}</option>
+                            ))}
+                          </select>
+                          <span className="pf-help">
+                            {f.help} Choices come from work order “{selectedWorkOrder.name}”.
+                          </span>
+                        </div>
+                      );
+                    })()
                   ) : (
                     (() => {
                       const isLocked = f.locked && Boolean(files[f.locked]);

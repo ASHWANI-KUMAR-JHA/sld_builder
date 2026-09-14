@@ -1,8 +1,8 @@
-import { FolderOpen, Download, RotateCcw, PenTool, LogOut, FileSpreadsheet, Combine, ClipboardList, FileCheck, Users } from 'lucide-react';
+import { FolderOpen, Download, RotateCcw, PenTool, LogOut, FileSpreadsheet, Combine, ClipboardList, FileCheck, Users, Package } from 'lucide-react';
 import Logo from './Logo';
 import './Header.css';
 
-function Header({ companyName, onProjectsClick, onExportClick, onResetClick, onBuilderClick, onFlashReportClick, onMergePdfClick, onInstallationsClick, onJcrClick, onUsersClick, onLogoutClick }) {
+function Header({ companyName, onProjectsClick, onExportClick, onResetClick, onBuilderClick, onFlashReportClick, onMergePdfClick, onWorkOrdersClick, onInstallationsClick, onJcrClick, onUsersClick, onLogoutClick }) {
   return (
     <header className="header">
       <div className="header-inner">
@@ -27,6 +27,10 @@ function Header({ companyName, onProjectsClick, onExportClick, onResetClick, onB
           <button className="header-btn primary" onClick={onMergePdfClick} title="Merge PDF Files">
             <Combine size={18} />
             <span>Merge PDF</span>
+          </button>
+          <button className="header-btn primary" onClick={onWorkOrdersClick} title="Work Orders">
+            <Package size={18} />
+            <span>Work Orders</span>
           </button>
           <button className="header-btn primary" onClick={onInstallationsClick} title="Installation Register">
             <ClipboardList size={18} />

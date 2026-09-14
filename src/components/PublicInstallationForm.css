@@ -203,10 +203,43 @@
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.pf-field input:focus {
+.pf-field input:focus,
+.pf-field select:focus {
   outline: none;
   border-color: #f59e0b;
   box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+}
+
+.pf-field select {
+  padding: 12px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  font-size: 1rem;
+  color: #0f172a;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.pf-field select:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+  cursor: default;
+}
+
+.pf-count {
+  margin-left: 8px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.pf-wo-select {
+  padding: 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  margin-bottom: 16px;
 }
 
 .pf-help {
