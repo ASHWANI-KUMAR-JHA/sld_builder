@@ -163,6 +163,7 @@ function WorkOrderCard({ order, expanded, onToggle, onDelete }) {
   const [pdfFiles, setPdfFiles] = useState([]);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [loadingPdfs, setLoadingPdfs] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState(null);
   const pdfInputRef = useRef(null);
 
   const loadItems = useCallback(async () => {
@@ -228,6 +229,29 @@ function WorkOrderCard({ order, expanded, onToggle, onDelete }) {
       setError(`PDF deletion failed: ${err.message}`);
     }
   }, [loadPdfs]);
+
+  const handleBulkUpload = useCallback(
+    async (category, file) => {
+      if (!file) return;
+      setUploadMsg(null);
+      try {
+        const serials = await parseSerialFile(file);
+        if (serials.length === 0) {
+          setUploadMsg({ type: 'error', text: 'No serials found in that file.' });
+          return;
+        }
+        const { inserted } = await insertWorkOrderItems(order.id, category, serials);
+        setUploadMsg({
+          type: 'success',
+          text: `Added ${inserted} new ${CATEGORY_LABELS[category]} serial(s) (${serials.length} read from file).`,
+        });
+        await loadItems();
+      } catch (err) {
+        setUploadMsg({ type: 'error', text: `Upload failed: ${err.message}` });
+      }
+    },
+    [order.id, loadItems]
+  );
 
   const handleRevert = useCallback(async (id) => {
     try {
@@ -336,6 +360,26 @@ function WorkOrderCard({ order, expanded, onToggle, onDelete }) {
             </div>
           </div>
 
+          {/* Bulk Upload Section - for pre-loading inventory */}
+          <div className="wo-bulk-upload-section">
+            <h3 className="wo-section-heading">📦 Bulk Upload Inventory (Optional)</h3>
+            <p className="wo-section-hint">
+              Pre-load serial numbers via CSV if you have inventory before PDI submissions. 
+              Serial numbers are also added automatically when PDI forms are submitted.
+            </p>
+            <div className="wo-bulk-upload-grid">
+              {WO_CATEGORIES.map((cat) => (
+                <BulkUploadTile
+                  key={cat.key}
+                  category={cat}
+                  stats={summary[cat.key]}
+                  onUpload={(file) => handleBulkUpload(cat.key, file)}
+                />
+              ))}
+            </div>
+            {uploadMsg && <div className={`msg ${uploadMsg.type}`}>{uploadMsg.text}</div>}
+          </div>
+
           {/* PDF Files Section */}
           {pdfFiles.length > 0 && (
             <div className="wo-pdf-section">
@@ -384,7 +428,7 @@ function WorkOrderCard({ order, expanded, onToggle, onDelete }) {
               <tbody>
                 {loading && <tr><td colSpan={5} className="empty">Loading…</td></tr>}
                 {!loading && items.length === 0 && (
-                  <tr><td colSpan={5} className="empty">No serials yet. Serials are added automatically from PDI forms.</td></tr>
+                  <tr><td colSpan={5} className="empty">No serials yet. Upload CSV above or wait for PDI form submissions.</td></tr>
                 )}
                 {items.map((it) => (
                   <tr key={it.id} className={it.status === 'used' ? 'row-used' : ''}>
@@ -418,3 +462,36 @@ function WorkOrderCard({ order, expanded, onToggle, onDelete }) {
 }
 
 
+
+
+// Bulk upload tile for pre-loading inventory via CSV
+function BulkUploadTile({ category, stats, onUpload }) {
+  const inputRef = useRef(null);
+  const { total = 0, used = 0 } = stats || {};
+  const onChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) onUpload(file);
+    e.target.value = '';
+  };
+  return (
+    <div className="wo-bulk-tile">
+      <div className="wo-bulk-tile-header">
+        <span className="wo-bulk-tile-icon">{category.label === 'Solar Panel' ? '☀️' : category.label === 'Battery' ? '🔋' : '💡'}</span>
+        <span className="wo-bulk-tile-title">{category.label}</span>
+      </div>
+      <div className="wo-bulk-tile-count">
+        <strong>{used}</strong> / {total} used
+      </div>
+      <button className="btn-bulk-upload" onClick={() => inputRef.current?.click()}>
+        <Upload size={14} /> Upload CSV
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".csv,.tsv,.txt,.xlsx,.xls,text/csv"
+        style={{ display: 'none' }}
+        onChange={onChange}
+      />
+    </div>
+  );
+}

@@ -469,3 +469,99 @@
 .wo-pdf-link:hover {
   text-decoration: underline;
 }
+
+
+.wo-bulk-upload-section {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.wo-section-heading {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 6px;
+}
+
+.wo-section-hint {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
+.wo-bulk-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.wo-bulk-tile {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+  transition: all 0.15s;
+}
+
+.wo-bulk-tile:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.wo-bulk-tile-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.wo-bulk-tile-icon {
+  font-size: 18px;
+}
+
+.wo-bulk-tile-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.wo-bulk-tile-count {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.wo-bulk-tile-count strong {
+  color: #15803d;
+  font-size: 15px;
+}
+
+.btn-bulk-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  width: 100%;
+  justify-content: center;
+}
+
+.btn-bulk-upload:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+}
