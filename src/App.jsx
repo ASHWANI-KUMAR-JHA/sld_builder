@@ -39,9 +39,13 @@ const isGeoDebug =
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('geo') === 'debug';
 
+// Developer mode - bypass login with ?dev=true
+const isDevMode =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('dev') === 'true';
+
 function App() {
-  // BYPASS LOGIN - Always set to true for direct access
-  const [loggedIn, setLoggedIn] = useState(true);
+  const [loggedIn, setLoggedIn] = useState(() => isDevMode || isAuthenticated());
   const [currentPage, setCurrentPage] = useState('generator'); // 'generator' | 'builder' | 'flashReport' | 'mergePdf'
   const [formData, setFormData] = useState(() => {
     const saved = loadFormData();
