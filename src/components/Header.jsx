@@ -36,9 +36,9 @@ function Header({ companyName, onProjectsClick, onExportClick, onResetClick, onB
             <ClipboardList size={18} />
             <span>Installations</span>
           </button>
-          <button className="header-btn primary" onClick={onJcrClick} title="Pre-Dispatch Inspection">
+          <button className="header-btn primary" onClick={onJcrClick} title="Joint Commissioning Report (JCR)">
             <FileCheck size={18} />
-            <span>PDI</span>
+            <span>JCR</span>
           </button>
           <button className="header-btn primary" onClick={onUsersClick} title="Manage Users">
             <Users size={18} />

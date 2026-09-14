@@ -1,0 +1,348 @@
+.installation-table-wrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.installation-table-empty {
+  padding: 3rem 2rem;
+  background: #f0f9ff;
+  border: 2px dashed #3b82f6;
+  border-radius: 0.75rem;
+  text-align: center;
+}
+
+.empty-message {
+  font-size: 0.875rem;
+  color: #1e40af;
+  margin: 0;
+}
+
+/* Table Controls */
+.table-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 0.5rem;
+  border: 1px solid #e5e7eb;
+}
+
+.table-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.table-count {
+  font-weight: 600;
+  color: #111827;
+  font-size: 0.875rem;
+}
+
+.bulk-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Scrollable Container */
+.table-scroll-container {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Table Styles */
+.installation-table {
+  width: 100%;
+  min-width: 2000px;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.installation-table thead {
+  background: #f3f4f6;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.installation-table th {
+  padding: 0.875rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 2px solid #d1d5db;
+  white-space: nowrap;
+}
+
+.col-subtitle {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: #6b7280;
+  margin-top: 0.25rem;
+}
+
+.installation-table tbody tr {
+  border-bottom: 1px solid #e5e7eb;
+  transition: background-color 0.15s;
+}
+
+.installation-table tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+.installation-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.installation-table td {
+  padding: 0.75rem;
+  vertical-align: middle;
+}
+
+/* Column Widths */
+.col-sno {
+  width: 60px;
+  text-align: center;
+}
+
+.col-beneficiary {
+  min-width: 200px;
+  max-width: 300px;
+}
+
+.col-coordinate {
+  width: 120px;
+}
+
+.col-date {
+  width: 140px;
+}
+
+.col-village {
+  min-width: 150px;
+}
+
+.col-block {
+  width: 120px;
+}
+
+.col-assembly {
+  width: 150px;
+}
+
+.col-serial {
+  width: 150px;
+}
+
+.col-rms {
+  width: 80px;
+}
+
+.col-action {
+  width: 60px;
+  text-align: center;
+}
+
+/* Serial Number Badge */
+.serial-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.5rem;
+  background: #3b82f6;
+  color: white;
+  font-weight: 600;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+}
+
+/* Table Inputs */
+.table-input,
+.table-select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  transition: all 0.15s;
+  background: white;
+}
+
+.table-input:focus,
+.table-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.table-input::placeholder {
+  color: #9ca3af;
+  font-size: 0.75rem;
+}
+
+.date-input {
+  cursor: pointer;
+}
+
+.table-select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  padding-right: 2rem;
+}
+
+/* Delete Button */
+.btn-icon-delete {
+  padding: 0.375rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.125rem;
+  border-radius: 0.375rem;
+  transition: all 0.15s;
+  line-height: 1;
+}
+
+.btn-icon-delete:hover {
+  background: #fee2e2;
+  transform: scale(1.1);
+}
+
+.btn-icon-delete:active {
+  transform: scale(0.95);
+}
+
+/* Table Footer */
+.table-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 0.5rem;
+  border: 1px solid #e5e7eb;
+}
+
+.table-summary {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+/* Scrollbar Styling */
+.table-scroll-container::-webkit-scrollbar {
+  height: 0.75rem;
+}
+
+.table-scroll-container::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 0.375rem;
+}
+
+.table-scroll-container::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 0.375rem;
+  border: 2px solid #f3f4f6;
+}
+
+.table-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .table-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bulk-actions {
+    flex-direction: column;
+  }
+
+  .bulk-actions .btn-small {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .table-scroll-container {
+    border-radius: 0.375rem;
+  }
+
+  .installation-table {
+    font-size: 0.75rem;
+  }
+
+  .installation-table th {
+    padding: 0.625rem 0.5rem;
+  }
+
+  .installation-table td {
+    padding: 0.5rem;
+  }
+
+  .table-input,
+  .table-select {
+    padding: 0.375rem;
+    font-size: 0.75rem;
+  }
+
+  .serial-badge {
+    min-width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.75rem;
+  }
+
+  .table-footer {
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: stretch;
+  }
+
+  .table-footer .btn-small {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Print Styles */
+@media print {
+  .table-controls,
+  .table-footer,
+  .col-action,
+  .btn-icon-delete {
+    display: none;
+  }
+
+  .table-scroll-container {
+    overflow: visible;
+    border: none;
+  }
+
+  .installation-table {
+    min-width: auto;
+    width: 100%;
+    font-size: 0.7rem;
+  }
+
+  .installation-table th,
+  .installation-table td {
+    padding: 0.25rem;
+  }
+}
