@@ -40,7 +40,8 @@ const isGeoDebug =
   new URLSearchParams(window.location.search).get('geo') === 'debug';
 
 function App() {
-  const [loggedIn, setLoggedIn] = useState(() => isAuthenticated());
+  // BYPASS LOGIN - Always set to true for direct access
+  const [loggedIn, setLoggedIn] = useState(true);
   const [currentPage, setCurrentPage] = useState('generator'); // 'generator' | 'builder' | 'flashReport' | 'mergePdf'
   const [formData, setFormData] = useState(() => {
     const saved = loadFormData();
