@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { ArrowLeft, LogOut, Plus, Trash2, Download, FileText, Save, Upload, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, LogOut, Plus, Trash2, Download, FileText, Save, Upload, AlertTriangle, CheckCircle2, Send } from 'lucide-react';
 import jsPDF from 'jspdf';
 import Logo from './Logo';
 import { readSheetRows, extractIdList } from '../utils/spreadsheet';
+import { findOrCreateWorkOrder, insertWorkOrderItems } from '../utils/workorders';
 import './JCR.css';
 
 const DEFAULT_HEADING = 'FORMAT OF INSPECTION REPORT OF SOLAR STREET LIGHTING SYSTEM';
@@ -963,6 +964,82 @@ function JCR({ onBack, onLogout }) {
     doc.save(`${safeName}.pdf`);
   }, [projectName, reportHeading, fields, additionalFields, workOrders, sampleCount, spvRows, batteryRows, luminaireRows, customSections, committeeComments, signatures, supplier, spvList, batteryList, luminaireList, customBulkSections]);
 
+  // Submit bulk data to Work Orders
+  const [submitting, setSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState(null);
+
+  const submitToWorkOrders = useCallback(async () => {
+    setSubmitMessage(null);
+    setSubmitting(true);
+    
+    try {
+      // Get all work order names (filter out empty ones)
+      const woNames = workOrders
+        .filter(w => w.orderNo && w.orderNo.trim())
+        .map(w => w.orderNo.trim());
+      
+      if (woNames.length === 0) {
+        setSubmitMessage({ type: 'error', text: 'Please add at least one Work Order No before submitting.' });
+        setSubmitting(false);
+        return;
+      }
+
+      // Check if we have any serials to upload
+      const hasSerials = spvList.filter(s => s.trim()).length > 0 ||
+                        batteryList.filter(s => s.trim()).length > 0 ||
+                        luminaireList.filter(s => s.trim()).length > 0;
+      
+      if (!hasSerials) {
+        setSubmitMessage({ type: 'error', text: 'Please upload at least one serial number list (SPV Modules, Batteries, or Luminaires).' });
+        setSubmitting(false);
+        return;
+      }
+
+      let totalCreated = 0;
+      let totalAdded = 0;
+
+      // Process each work order
+      for (const woName of woNames) {
+        // Find or create the work order
+        const workOrder = await findOrCreateWorkOrder({
+          name: woName,
+          description: `Created from PDI: ${projectName || 'Pre-Dispatch Inspection'}`,
+          createdBy: 'PDI Bulk Upload',
+        });
+        
+        if (!workOrder) continue;
+        totalCreated++;
+
+        // Add SPV Modules (Solar Panels)
+        if (spvList.filter(s => s.trim()).length > 0) {
+          const { inserted } = await insertWorkOrderItems(workOrder.id, 'module', spvList.filter(s => s.trim()));
+          totalAdded += inserted;
+        }
+
+        // Add Batteries
+        if (batteryList.filter(s => s.trim()).length > 0) {
+          const { inserted } = await insertWorkOrderItems(workOrder.id, 'battery', batteryList.filter(s => s.trim()));
+          totalAdded += inserted;
+        }
+
+        // Add Luminaires
+        if (luminaireList.filter(s => s.trim()).length > 0) {
+          const { inserted } = await insertWorkOrderItems(workOrder.id, 'luminaire', luminaireList.filter(s => s.trim()));
+          totalAdded += inserted;
+        }
+      }
+
+      setSubmitMessage({
+        type: 'success',
+        text: `✅ Successfully submitted! ${totalCreated} work order(s) created/updated with ${totalAdded} new serial numbers. Check the Work Orders page to view them.`,
+      });
+    } catch (err) {
+      setSubmitMessage({ type: 'error', text: `Submission failed: ${err.message}` });
+    } finally {
+      setSubmitting(false);
+    }
+  }, [workOrders, spvList, batteryList, luminaireList, projectName]);
+
   return (
     <div className="jcr-page">
       <header className="jcr-header">
@@ -1484,6 +1561,9 @@ function JCR({ onBack, onLogout }) {
         </section>
 
         <div className="jcr-export-bar">
+          <button className="btn-export-main submit-to-wo" onClick={submitToWorkOrders} disabled={submitting}>
+            <Send size={18} /> {submitting ? 'Submitting...' : 'Submit to Work Orders'}
+          </button>
           <button className="btn-export-main secondary" onClick={() => fileInputRef.current?.click()}>
             <Upload size={18} /> Load JSON
           </button>
@@ -1494,6 +1574,12 @@ function JCR({ onBack, onLogout }) {
             <Download size={18} /> Export PDF
           </button>
         </div>
+
+        {submitMessage && (
+          <div className={`jcr-submit-message ${submitMessage.type}`}>
+            {submitMessage.text}
+          </div>
+        )}
       </div>
     </div>
   );
