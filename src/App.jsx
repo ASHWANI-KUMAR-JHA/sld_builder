@@ -20,6 +20,7 @@ import { loadFormData, saveFormData } from './utils/storage';
 import { DEFAULT_FORM_DATA, calculateDerivedValues } from './utils/defaults';
 import { isAuthenticated, clearSession } from './utils/auth';
 import './App.css';
+
 // Public, shareable installation form. No login required so it can be sent
 // to field users. Accessed via ?form=install in the URL.
 const isPublicForm =
