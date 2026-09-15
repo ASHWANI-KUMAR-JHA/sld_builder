@@ -1,0 +1,55 @@
+.resizable-split {
+  display: flex;
+  width: 100%;
+  height: calc(100vh - 60px);
+  overflow: hidden;
+}
+
+.resizable-left {
+  flex-shrink: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+.resizable-handle {
+  width: 8px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gray-50);
+  border-left: 1px solid var(--gray-200);
+  border-right: 1px solid var(--gray-200);
+  transition: background 0.15s;
+}
+
+.resizable-handle:hover {
+  background: var(--primary-light);
+}
+
+.handle-grip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.handle-grip span {
+  display: block;
+  width: 4px;
+  height: 4px;
+  background: var(--gray-400);
+  border-radius: 50%;
+}
+
+.resizable-handle:hover .handle-grip span {
+  background: var(--primary);
+}
+
+.resizable-right {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 300px;
+}

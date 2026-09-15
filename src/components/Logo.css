@@ -1,0 +1,19 @@
+.sunfeed-logo {
+  object-fit: contain;
+  display: block;
+}
+
+.sunfeed-logo--small {
+  height: 20px;
+  width: auto;
+}
+
+.sunfeed-logo--medium {
+  height: 28px;
+  width: auto;
+}
+
+.sunfeed-logo--large {
+  height: 40px;
+  width: auto;
+}
