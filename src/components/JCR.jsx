@@ -1,13 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, RefreshCw, Filter } from 'lucide-react';
 import ComboboxWithHistory from './ComboboxWithHistory';
 import InstallationTable from './InstallationTable';
 import { saveJCRDraft, loadJCRDraft, getAllJCRDrafts, deleteJCRDraft } from '../utils/jcrStorage';
 import { generateJCRPDF } from '../utils/jcrPdfGenerator';
+import { fetchInstallations } from '../utils/installations';
+import { getPendingJCRImport, clearPendingJCRImport } from '../utils/jcrDataTransfer';
 import './JCR.css';
 
 const JCR = ({ onBack, onLogout }) => {
   // Common fields state
   const [formData, setFormData] = useState({
+    // Letter Section (before Section 1)
+    letterTo: 'The Director New and Renewable Energy Dept & HAREDA',
+    letterAddress: 'Akshay Urja Bhawan, Sector-17, Panchkula Haryana',
+    letterSubject: '',
+    letterBody: '',
+    
     // Header / Common Fields (Format-III)
     systemName: 'Solar Street Lighting System',
     district: '',
@@ -39,19 +48,73 @@ const JCR = ({ onBack, onLogout }) => {
     poApoName: '',
     countersignAuthority: 'Addl. Deputy Commissioner-cum-Chief Project Officer, PANCHKULA',
     
+    // Section 6 - Additional Certification Fields
+    certificationDate: '',
+    inspectionOfficer: '',
+    technicalSpecsCompliance: 'YES',
+    safetyStandardsCompliance: 'YES',
+    warrantyPeriod: '5 Years',
+    maintenanceSchedule: 'As per manufacturer guidelines',
+    
     // Variable fields (repeatable rows)
     installations: [],
   });
+
+  // Letter template options
+  const [letterTemplates, setLetterTemplates] = useState([
+    { id: 1, name: 'Default Payment Request', subject: 'Request to release 30% payment against work order no:', body: 'With reference to the subject above we are writing this letter to inform you that we received the order for Supply, Installation and Commissioning of LED based Solar Street Lights. We had completed the installation of above said lights in various villages. So, we requesting you to please release our 30% payment against installation receipt. We are enclosed the original Bill and Installation receipt for necessary action.' },
+    { id: 2, name: 'Installation Complete', subject: 'Installation Completion Report', body: 'This is to certify that the installation and commissioning of solar street lighting systems has been completed as per the work order specifications and requirements.' },
+  ]);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
 
   const [currentDraft, setCurrentDraft] = useState(null);
   const [savedDrafts, setSavedDrafts] = useState([]);
   const [showDraftList, setShowDraftList] = useState(false);
   const [unsavedChanges, setUnsavedChanges] = useState(false);
 
+  // Filter state for loading installations
+  const [availableInstallations, setAvailableInstallations] = useState([]);
+  const [loadingInstallations, setLoadingInstallations] = useState(false);
+  const [filterWorkOrder, setFilterWorkOrder] = useState('');
+  const [filterLocation, setFilterLocation] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterMessage, setFilterMessage] = useState(null);
+
   // Load saved drafts on mount
   useEffect(() => {
     const drafts = getAllJCRDrafts();
     setSavedDrafts(drafts);
+
+    // Check for pending import from Installation Register
+    const pendingImport = getPendingJCRImport();
+    if (pendingImport && pendingImport.length > 0) {
+      const imported = pendingImport.map((inst, idx) => ({
+        serialNo: idx + 1,
+        beneficiaryName: inst.exact_location || '',
+        latitude: inst.latitude || '',
+        longitude: inst.longitude || '',
+        photoDate: inst.photo_date || inst.commissioning_date || '',
+        villageGramPanchayat: inst.village || '',
+        block: inst.block || '',
+        assemblyConstituency: inst.assembly_constituency || '',
+        commissioningDate: inst.commissioning_date || '',
+        moduleSerialNo: inst.module_serial || '',
+        batterySerialNo: inst.battery_serial || '',
+        luminaireSerialNo: inst.luminaire_serial || '',
+        rms: inst.rms || 'YES',
+      }));
+      
+      setFormData(prev => ({
+        ...prev,
+        installations: imported,
+        systemsInThisJCR: imported.length.toString(),
+      }));
+      
+      setFilterMessage({
+        type: 'success',
+        text: `✓ Auto-imported ${imported.length} installation(s) from Installation Register!`
+      });
+    }
   }, []);
 
   // Mark unsaved changes
@@ -91,6 +154,32 @@ const JCR = ({ onBack, onLogout }) => {
 
   const handleCommonFieldChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddLetterTemplate = () => {
+    const name = prompt('Enter template name:');
+    if (!name) return;
+    const newTemplate = {
+      id: letterTemplates.length > 0 ? Math.max(...letterTemplates.map(t => t.id)) + 1 : 1,
+      name,
+      subject: formData.letterSubject,
+      body: formData.letterBody,
+    };
+    setLetterTemplates(prev => [...prev, newTemplate]);
+  };
+
+  const handleRemoveLetterTemplate = (id) => {
+    if (!window.confirm('Delete this template?')) return;
+    setLetterTemplates(prev => prev.filter(t => t.id !== id));
+  };
+
+  const handleLoadLetterTemplate = (template) => {
+    setFormData(prev => ({
+      ...prev,
+      letterSubject: template.subject,
+      letterBody: template.body,
+    }));
+    setSelectedTemplate(template.id);
   };
 
   const handleInstallationChange = (index, field, value) => {
@@ -136,6 +225,89 @@ const JCR = ({ onBack, onLogout }) => {
       }));
     }
   };
+
+  // Load installations from database with filters
+  const handleLoadInstallations = useCallback(async () => {
+    setLoadingInstallations(true);
+    setFilterMessage(null);
+    try {
+      // Fetch all installations
+      const allInstallations = await fetchInstallations();
+      
+      // Apply filters
+      let filtered = allInstallations;
+      
+      if (filterWorkOrder.trim()) {
+        const woQuery = filterWorkOrder.toLowerCase().trim();
+        filtered = filtered.filter(inst => 
+          inst.work_order && inst.work_order.toLowerCase().includes(woQuery)
+        );
+      }
+      
+      if (filterLocation.trim()) {
+        const locQuery = filterLocation.toLowerCase().trim();
+        filtered = filtered.filter(inst => 
+          (inst.exact_location && inst.exact_location.toLowerCase().includes(locQuery)) ||
+          (inst.village && inst.village.toLowerCase().includes(locQuery)) ||
+          (inst.block && inst.block.toLowerCase().includes(locQuery)) ||
+          (inst.assembly_constituency && inst.assembly_constituency.toLowerCase().includes(locQuery))
+        );
+      }
+      
+      setAvailableInstallations(filtered);
+      setFilterMessage({ 
+        type: 'success', 
+        text: `Found ${filtered.length} installation(s) matching your filters.` 
+      });
+      
+    } catch (err) {
+      console.error('Failed to load installations:', err);
+      setFilterMessage({ type: 'error', text: `Failed to load: ${err.message}` });
+    } finally {
+      setLoadingInstallations(false);
+    }
+  }, [filterWorkOrder, filterLocation]);
+
+  // Import selected installations into JCR form
+  const handleImportInstallations = useCallback((selectedIds) => {
+    const selected = availableInstallations.filter(inst => 
+      selectedIds.includes(inst.id)
+    );
+    
+    if (selected.length === 0) {
+      setFilterMessage({ type: 'error', text: 'No installations selected to import.' });
+      return;
+    }
+
+    // Map installation records to JCR installation format
+    const imported = selected.map((inst, idx) => ({
+      serialNo: formData.installations.length + idx + 1,
+      beneficiaryName: inst.exact_location || '',
+      latitude: inst.latitude || '',
+      longitude: inst.longitude || '',
+      photoDate: inst.photo_date || inst.commissioning_date || '',
+      villageGramPanchayat: inst.village || '',
+      block: inst.block || '',
+      assemblyConstituency: inst.assembly_constituency || '',
+      commissioningDate: inst.commissioning_date || '',
+      moduleSerialNo: inst.module_serial || '',
+      batterySerialNo: inst.battery_serial || '',
+      luminaireSerialNo: inst.luminaire_serial || '',
+      rms: inst.rms || 'YES',
+    }));
+
+    setFormData(prev => ({
+      ...prev,
+      installations: [...prev.installations, ...imported],
+      systemsInThisJCR: (prev.installations.length + imported.length).toString(),
+    }));
+
+    setFilterMessage({ 
+      type: 'success', 
+      text: `✓ Imported ${imported.length} installation(s) into JCR form.` 
+    });
+    setShowFilters(false);
+  }, [availableInstallations, formData.installations.length]);
 
   const handleSaveDraft = () => {
     const draftId = currentDraft || `draft_${Date.now()}`;
@@ -272,6 +444,14 @@ const JCR = ({ onBack, onLogout }) => {
       </div>
 
       <div className="jcr-header">
+        <div className="jcr-logo-section">
+          <img 
+            src="/SUNFEED LOGO.png" 
+            alt="Sunfeed Logo" 
+            className="jcr-logo"
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+        </div>
         <div className="jcr-title-section">
           <h1 className="jcr-title">Joint Commissioning Report (JCR)</h1>
           <p className="jcr-subtitle">Solar Street Lighting System Installation Documentation</p>
@@ -344,6 +524,89 @@ const JCR = ({ onBack, onLogout }) => {
       )}
 
       <form className="jcr-form" onSubmit={(e) => e.preventDefault()}>
+        {/* Letter Section - Above Section 1 */}
+        <section className="form-section letter-section">
+          <h2 className="section-title">
+            <span className="section-icon">✉️</span>
+            Letter / Cover Document
+            <span className="format-tag">Optional</span>
+          </h2>
+
+          <div className="letter-templates">
+            <label style={{ fontWeight: 600, marginBottom: '8px', display: 'block' }}>Quick Templates:</label>
+            <div className="template-buttons">
+              {letterTemplates.map(template => (
+                <div key={template.id} className="template-item">
+                  <button
+                    type="button"
+                    className={`btn btn-secondary btn-small ${selectedTemplate === template.id ? 'active' : ''}`}
+                    onClick={() => handleLoadLetterTemplate(template)}
+                  >
+                    {template.name}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-icon-small danger"
+                    onClick={() => handleRemoveLetterTemplate(template.id)}
+                    title="Delete template"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="btn btn-secondary btn-small"
+                onClick={handleAddLetterTemplate}
+              >
+                + Save Current as Template
+              </button>
+            </div>
+          </div>
+          
+          <div className="form-grid">
+            <div className="form-field full-width">
+              <label>To</label>
+              <input
+                type="text"
+                value={formData.letterTo}
+                onChange={(e) => handleCommonFieldChange('letterTo', e.target.value)}
+                placeholder="Recipient name/designation"
+              />
+            </div>
+
+            <div className="form-field full-width">
+              <label>Address</label>
+              <textarea
+                rows={2}
+                value={formData.letterAddress}
+                onChange={(e) => handleCommonFieldChange('letterAddress', e.target.value)}
+                placeholder="Full address"
+              />
+            </div>
+
+            <div className="form-field full-width">
+              <label>Subject</label>
+              <input
+                type="text"
+                value={formData.letterSubject}
+                onChange={(e) => handleCommonFieldChange('letterSubject', e.target.value)}
+                placeholder="e.g., Request to release 30% payment against work order no: DNRE/2025-2026/10521 DATED: 18/02/2026 District Ambala"
+              />
+            </div>
+
+            <div className="form-field full-width">
+              <label>Letter Body</label>
+              <textarea
+                rows={6}
+                value={formData.letterBody}
+                onChange={(e) => handleCommonFieldChange('letterBody', e.target.value)}
+                placeholder="Main content of the letter..."
+              />
+            </div>
+          </div>
+        </section>
+
         {/* Section 1: Header / Common Fields */}
         <section className="form-section">
           <h2 className="section-title">
@@ -621,6 +884,152 @@ const JCR = ({ onBack, onLogout }) => {
           </div>
         </section>
 
+        {/* Installation Data Filters - Load from Installation Register */}
+        <section className="form-section">
+          <div className="filter-header">
+            <h2 className="section-title">
+              <span className="section-icon">🔍</span>
+              Load Installation Data
+            </h2>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              <Filter size={16} />
+              {showFilters ? 'Hide Filters' : 'Show Filters'}
+            </button>
+          </div>
+
+          {showFilters && (
+            <div className="filter-panel">
+              <p className="filter-info">
+                Load installation data from the Installation Register by filtering on Work Order Number and/or Location.
+              </p>
+              
+              <div className="form-grid">
+                <div className="form-field">
+                  <label>Filter by Work Order Number</label>
+                  <input
+                    type="text"
+                    value={filterWorkOrder}
+                    onChange={(e) => setFilterWorkOrder(e.target.value)}
+                    placeholder="e.g., WO/2026/00123 or part of it"
+                    className="filter-input"
+                  />
+                </div>
+
+                <div className="form-field">
+                  <label>Filter by Location</label>
+                  <input
+                    type="text"
+                    value={filterLocation}
+                    onChange={(e) => setFilterLocation(e.target.value)}
+                    placeholder="Village, Block, Assembly, or Exact Location"
+                    className="filter-input"
+                  />
+                </div>
+              </div>
+
+              <div className="filter-actions">
+                <button
+                  className="btn btn-primary"
+                  onClick={handleLoadInstallations}
+                  disabled={loadingInstallations}
+                >
+                  <Search size={16} />
+                  {loadingInstallations ? 'Searching...' : 'Search Installations'}
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setFilterWorkOrder('');
+                    setFilterLocation('');
+                    setAvailableInstallations([]);
+                    setFilterMessage(null);
+                  }}
+                >
+                  Clear Filters
+                </button>
+              </div>
+
+              {filterMessage && (
+                <div className={`filter-message ${filterMessage.type}`}>
+                  {filterMessage.text}
+                </div>
+              )}
+
+              {availableInstallations.length > 0 && (
+                <div className="installation-results">
+                  <h3 className="results-title">
+                    Available Installations ({availableInstallations.length})
+                  </h3>
+                  <div className="results-table-wrapper">
+                    <table className="results-table">
+                      <thead>
+                        <tr>
+                          <th>
+                            <input
+                              type="checkbox"
+                              onChange={(e) => {
+                                const checkboxes = document.querySelectorAll('.install-checkbox');
+                                checkboxes.forEach(cb => cb.checked = e.target.checked);
+                              }}
+                              title="Select all"
+                            />
+                          </th>
+                          <th>S.No</th>
+                          <th>Work Order</th>
+                          <th>Location</th>
+                          <th>Village</th>
+                          <th>Block</th>
+                          <th>Assembly</th>
+                          <th>Module #</th>
+                          <th>Battery #</th>
+                          <th>Luminaire #</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {availableInstallations.map((inst) => (
+                          <tr key={inst.id}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                className="install-checkbox"
+                                data-id={inst.id}
+                              />
+                            </td>
+                            <td>{inst.sno || '-'}</td>
+                            <td>{inst.work_order || '-'}</td>
+                            <td>{inst.exact_location || '-'}</td>
+                            <td>{inst.village || '-'}</td>
+                            <td>{inst.block || '-'}</td>
+                            <td>{inst.assembly_constituency || '-'}</td>
+                            <td>{inst.module_serial || '-'}</td>
+                            <td>{inst.battery_serial || '-'}</td>
+                            <td>{inst.luminaire_serial || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button
+                    className="btn btn-success"
+                    onClick={() => {
+                      const selected = Array.from(
+                        document.querySelectorAll('.install-checkbox:checked')
+                      ).map(cb => parseInt(cb.dataset.id));
+                      handleImportInstallations(selected);
+                    }}
+                    style={{ marginTop: '12px' }}
+                  >
+                    Import Selected to JCR
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
         {/* Section 5: Installation Sites Table */}
         <section className="form-section">
           <h2 className="section-title">
@@ -638,6 +1047,83 @@ const JCR = ({ onBack, onLogout }) => {
               installationCompleteDate: formData.installationCompleteDate,
             }}
           />
+        </section>
+
+        {/* Section 6: Additional Certification & Compliance */}
+        <section className="form-section">
+          <h2 className="section-title">
+            <span className="section-number">6</span>
+            Additional Certification & Compliance
+            <span className="format-tag">Format-IV</span>
+          </h2>
+          
+          <div className="form-grid">
+            <div className="form-field">
+              <ComboboxWithHistory
+                fieldId="jcr.certificationDate"
+                value={formData.certificationDate}
+                onChange={(value) => handleCommonFieldChange('certificationDate', value)}
+                label="Certification Date"
+                type="date"
+              />
+            </div>
+
+            <div className="form-field">
+              <ComboboxWithHistory
+                fieldId="jcr.inspectionOfficer"
+                value={formData.inspectionOfficer}
+                onChange={(value) => handleCommonFieldChange('inspectionOfficer', value)}
+                label="Inspection Officer Name"
+                placeholder="Name and designation"
+              />
+            </div>
+
+            <div className="form-field">
+              <label>Technical Specifications Compliance</label>
+              <select
+                value={formData.technicalSpecsCompliance}
+                onChange={(e) => handleCommonFieldChange('technicalSpecsCompliance', e.target.value)}
+                style={{ padding: '0.625rem 0.875rem', border: '1px solid #d1d5db', borderRadius: '0.5rem', fontSize: '0.875rem' }}
+              >
+                <option value="YES">YES - Compliant</option>
+                <option value="NO">NO - Non-compliant</option>
+                <option value="PARTIAL">PARTIAL - Partially compliant</option>
+              </select>
+            </div>
+
+            <div className="form-field">
+              <label>Safety Standards Compliance</label>
+              <select
+                value={formData.safetyStandardsCompliance}
+                onChange={(e) => handleCommonFieldChange('safetyStandardsCompliance', e.target.value)}
+                style={{ padding: '0.625rem 0.875rem', border: '1px solid #d1d5db', borderRadius: '0.5rem', fontSize: '0.875rem' }}
+              >
+                <option value="YES">YES - Compliant</option>
+                <option value="NO">NO - Non-compliant</option>
+                <option value="PARTIAL">PARTIAL - Partially compliant</option>
+              </select>
+            </div>
+
+            <div className="form-field">
+              <ComboboxWithHistory
+                fieldId="jcr.warrantyPeriod"
+                value={formData.warrantyPeriod}
+                onChange={(value) => handleCommonFieldChange('warrantyPeriod', value)}
+                label="Warranty Period"
+                placeholder="e.g., 5 Years"
+              />
+            </div>
+
+            <div className="form-field full-width">
+              <ComboboxWithHistory
+                fieldId="jcr.maintenanceSchedule"
+                value={formData.maintenanceSchedule}
+                onChange={(value) => handleCommonFieldChange('maintenanceSchedule', value)}
+                label="Maintenance Schedule"
+                placeholder="Maintenance requirements and schedule"
+              />
+            </div>
+          </div>
         </section>
       </form>
     </div>

@@ -7,20 +7,24 @@
 }
 
 .install-header {
-  background: #1a1a2e;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   color: #fff;
-  padding: 0 16px;
-  height: 60px;
+  padding: 12px 24px;
+  min-height: 70px;
   display: flex;
   align-items: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
 }
 
 .install-header .header-inner {
   width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 24px;
 }
 
 .install-header .header-left,
@@ -28,46 +32,72 @@
   display: flex;
   align-items: center;
   gap: 16px;
+  flex-wrap: wrap;
+}
+
+.install-header .header-left {
+  flex: 1;
+  min-width: 0;
 }
 
 .install-header .logo {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+}
+
+.install-header .logo-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .install-header .logo-text h1 {
-  font-size: 16px;
+  font-size: 18px;
   margin: 0;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
 }
 
 .install-header .logo-text .subtitle {
-  font-size: 11px;
-  opacity: 0.7;
+  font-size: 12px;
+  opacity: 0.85;
+  font-weight: 400;
+  line-height: 1.2;
 }
 
 .install-header .header-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
-  background: transparent;
+  padding: 9px 16px;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
   color: #fff;
   cursor: pointer;
   font-size: 13px;
-  transition: all 0.2s;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .install-header .header-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.install-header .header-btn.logout {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .install-header .header-btn.logout:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
 }
 
 .install-body {
@@ -702,4 +732,31 @@
   gap: 8px;
   color: #2563eb;
   font-weight: 600;
+}
+
+/* Submit to JCR Button */
+.btn-submit-jcr {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 6px;
+  background: #10b981;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-submit-jcr:hover:not(:disabled) {
+  background: #059669;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);
+}
+
+.btn-submit-jcr:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

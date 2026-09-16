@@ -3,7 +3,7 @@ import {
   ArrowLeft, LogOut, Plus, Trash2, Save, LayoutGrid, ClipboardList,
   Search, RefreshCw, MapPin, ClipboardPaste, Upload, Share2, Download, ChevronDown, X,
   Pencil, Check, Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  FileText, Paperclip, Image as ImageIcon,
+  FileText, Paperclip, Image as ImageIcon, Send,
 } from 'lucide-react';
 import Logo from './Logo';
 import {
@@ -16,6 +16,7 @@ import {
   parsePastedRows,
   parseUploadedFile,
 } from '../utils/installations';
+import { storePendingJCRImport } from '../utils/jcrDataTransfer';
 import './InstallationRegister.css';
 
 // Fields shown as editable columns in the entry grid (excludes project/work order
@@ -392,6 +393,41 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
   const [editError, setEditError] = useState(null);
   // Current 1-based page for the filtered+sorted result set.
   const [page, setPage] = useState(1);
+  // Selected records for JCR submission
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  const toggleSelect = useCallback((id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback((records) => {
+    if (selectedIds.size === records.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(records.map(r => r.id)));
+    }
+  }, [selectedIds.size]);
+
+  const handleSubmitToJCR = useCallback(() => {
+    const selected = records.filter(r => selectedIds.has(r.id));
+    if (selected.length === 0) {
+      alert('Please select at least one installation to submit to JCR.');
+      return;
+    }
+    
+    if (storePendingJCRImport(selected)) {
+      alert(`${selected.length} installation(s) prepared for JCR import. Click OK to navigate to JCR page.`);
+      // Navigate to JCR by triggering a page reload with hash
+      window.location.href = window.location.origin + window.location.pathname + '?page=jcr';
+    } else {
+      alert('Failed to prepare data for JCR import.');
+    }
+  }, [records, selectedIds]);
 
   const beginEdit = useCallback((record) => {
     setEditError(null);
@@ -622,6 +658,14 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
         >
           <Download size={16} /> Export Report
         </button>
+        <button
+          className="btn-submit-jcr"
+          onClick={handleSubmitToJCR}
+          disabled={selectedIds.size === 0}
+          title="Submit selected installations to JCR"
+        >
+          <Send size={16} /> Submit to JCR ({selectedIds.size})
+        </button>
       </div>
 
       <div className="dash-filters">
@@ -710,6 +754,14 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
         <table className="dash-table">
           <thead>
             <tr>
+              <th>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size > 0 && selectedIds.size === pagedRecords.length}
+                  onChange={() => toggleSelectAll(pagedRecords)}
+                  title="Select all on page"
+                />
+              </th>
               <th>Project</th>
               <th>Work Order</th>
               <th className="sortable" onClick={() => toggleSort('sno')} title="Sort by S.No">
@@ -740,7 +792,7 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={17} className="empty">
+                <td colSpan={18} className="empty">
                   <span className="dash-loading">
                     <RefreshCw size={16} className="dash-spin" /> Loading installations…
                   </span>
@@ -748,11 +800,12 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
               </tr>
             )}
             {visibleRecords.length === 0 && !loading && (
-              <tr><td colSpan={17} className="empty">No records found.</td></tr>
+              <tr><td colSpan={18} className="empty">No records found.</td></tr>
             )}
             {pagedRecords.map((r) =>
               editingId === r.id ? (
                 <tr key={r.id} className="editing-row">
+                  <td><input type="checkbox" disabled /></td>
                   <td><input className="edit-input" value={editDraft.project_name} onChange={(e) => updateDraft('project_name', e.target.value)} /></td>
                   <td><input className="edit-input" value={editDraft.work_order} onChange={(e) => updateDraft('work_order', e.target.value)} /></td>
                   <td><input className="edit-input narrow" value={editDraft.sno} onChange={(e) => updateDraft('sno', e.target.value)} /></td>
@@ -793,6 +846,13 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
                 </tr>
               ) : (
                 <tr key={r.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(r.id)}
+                      onChange={() => toggleSelect(r.id)}
+                    />
+                  </td>
                   <td>{r.project_name || '—'}</td>
                   <td>{r.work_order || '—'}</td>
                   <td>{r.sno || '—'}</td>

@@ -47,7 +47,11 @@ const isDevMode =
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(() => isDevMode || isAuthenticated());
-  const [currentPage, setCurrentPage] = useState('generator'); // 'generator' | 'builder' | 'flashReport' | 'mergePdf'
+  const [currentPage, setCurrentPage] = useState(() => {
+    // Check URL parameter for page navigation
+    const params = new URLSearchParams(window.location.search);
+    return params.get('page') || 'generator';
+  }); // 'generator' | 'builder' | 'flashReport' | 'mergePdf'
   const [formData, setFormData] = useState(() => {
     const saved = loadFormData();
     return saved || { ...DEFAULT_FORM_DATA };

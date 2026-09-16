@@ -668,3 +668,55 @@
   font-weight: 700;
   color: #b91c1c;
 }
+
+/* PDI Submit to Work Order Section */
+.pdi-submit-section {
+  margin-top: 24px;
+  padding: 16px;
+  border: 2px solid #2563eb;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+}
+
+.pdi-submit-info {
+  margin-bottom: 12px;
+}
+
+.pdi-submit-info p {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #1e40af;
+}
+
+.pdi-submit-info strong {
+  color: #1e3a8a;
+}
+
+.pdi-submit-section .msg {
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.pdi-submit-section .msg.success {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
+}
+
+.pdi-submit-section .msg.error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+}
+
+.pdi-submit-section .btn-export-main {
+  width: 100%;
+  justify-content: center;
+}
+
+.pdi-submit-section .btn-export-main:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { ArrowLeft, LogOut, Plus, Trash2, Download, FileText, Save, Upload, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, LogOut, Plus, Trash2, Download, FileText, Save, Upload, AlertTriangle, CheckCircle2, Send } from 'lucide-react';
 import jsPDF from 'jspdf';
 import Logo from './Logo';
 import { readSheetRows, extractIdList } from '../utils/spreadsheet';
+import { findOrCreateWorkOrder, insertWorkOrderItems } from '../utils/workorders';
 import './PDI.css';
 
 const DEFAULT_HEADING = 'FORMAT OF INSPECTION REPORT OF SOLAR STREET LIGHTING SYSTEM';
@@ -352,6 +353,10 @@ function PDI({ onBack, onLogout }) {
   const [batteryList, setBatteryList] = useState(PERSISTED.batteryList ?? []);
   const [luminaireList, setLuminaireList] = useState(PERSISTED.luminaireList ?? []);
 
+  // Work Order submission state
+  const [submitting, setSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState(null);
+
   const fileInputRef = useRef(null);
 
   // Keep sample tables sized to sampleCount
@@ -586,6 +591,95 @@ function PDI({ onBack, onLogout }) {
       setList(parseIdList(text));
     }
   }, []);
+
+  // ============ WORK ORDER SUBMISSION ============
+  const handleSubmitToWorkOrder = useCallback(async () => {
+    setSubmitMessage(null);
+    
+    // Validation
+    const rateContract = fields.rateContractNo?.trim();
+    if (!rateContract) {
+      setSubmitMessage({ type: 'error', text: 'Please fill Rate Contract No. & Date (Field 2(i)) before submitting.' });
+      return;
+    }
+    
+    if (workOrders.length === 0 || !workOrders[0].orderNo?.trim()) {
+      setSubmitMessage({ type: 'error', text: 'Please fill at least one Work Order No. & Date (Field 2(ii)) before submitting.' });
+      return;
+    }
+
+    const pdiDate = fields.dateOfInspection?.trim();
+    if (!pdiDate) {
+      setSubmitMessage({ type: 'error', text: 'Please fill Date of Inspection (Field 6) before submitting.' });
+      return;
+    }
+
+    // Check if any lists have data
+    const hasSpv = spvList.filter(id => id.trim() !== '').length > 0;
+    const hasBattery = batteryList.filter(id => id.trim() !== '').length > 0;
+    const hasLuminaire = luminaireList.filter(id => id.trim() !== '').length > 0;
+
+    if (!hasSpv && !hasBattery && !hasLuminaire) {
+      setSubmitMessage({ type: 'error', text: 'Please upload at least one serial number list (SPV Modules, Batteries, or Luminaires) before submitting.' });
+      return;
+    }
+
+    if (!window.confirm('Submit this PDI data to create/update a Work Order? This will upload all serial numbers from the bulk lists.')) {
+      return;
+    }
+
+    setSubmitting(true);
+    
+    try {
+      // Create work order name: RateContractNo + WorkOrderNo + PDIDate
+      const firstWorkOrder = workOrders[0].orderNo.trim();
+      const workOrderName = `${rateContract} | ${firstWorkOrder} | ${pdiDate}`;
+      const workOrderDescription = `PDI Report - ${projectName || 'Solar Street Lighting'}`;
+
+      // Find or create work order
+      const workOrder = await findOrCreateWorkOrder({
+        name: workOrderName,
+        description: workOrderDescription,
+        createdBy: 'PDI Form',
+      });
+
+      // Upload serial numbers for each category
+      let totalInserted = 0;
+      const results = [];
+
+      if (hasSpv) {
+        const cleanSpv = uniqueIds(spvList);
+        const { inserted } = await insertWorkOrderItems(workOrder.id, 'module', cleanSpv);
+        totalInserted += inserted;
+        results.push(`${inserted} SPV modules`);
+      }
+
+      if (hasBattery) {
+        const cleanBattery = uniqueIds(batteryList);
+        const { inserted } = await insertWorkOrderItems(workOrder.id, 'battery', cleanBattery);
+        totalInserted += inserted;
+        results.push(`${inserted} batteries`);
+      }
+
+      if (hasLuminaire) {
+        const cleanLuminaire = uniqueIds(luminaireList);
+        const { inserted } = await insertWorkOrderItems(workOrder.id, 'luminaire', cleanLuminaire);
+        totalInserted += inserted;
+        results.push(`${inserted} luminaires`);
+      }
+
+      setSubmitMessage({
+        type: 'success',
+        text: `✓ Work Order "${workOrderName}" created/updated successfully! Added: ${results.join(', ')}. (${totalInserted} new serials total)`,
+      });
+
+    } catch (err) {
+      console.error('Work order submission failed:', err);
+      setSubmitMessage({ type: 'error', text: `Submission failed: ${err.message}` });
+    } finally {
+      setSubmitting(false);
+    }
+  }, [fields, workOrders, spvList, batteryList, luminaireList, projectName]);
 
   // ============ PDF EXPORT ============
   const exportPDF = useCallback(async () => {
@@ -1480,6 +1574,31 @@ function PDI({ onBack, onLogout }) {
               <Plus size={14} /> Add Custom Bulk Upload Section
             </button>
             <span className="jcr-hint">Free-text header, same sheet format as SPV Modules. Printed on its own PDF pages.</span>
+          </div>
+
+          {/* Submit to Work Order Button */}
+          <div className="pdi-submit-section">
+            <div className="pdi-submit-info">
+              <p><strong>Submit PDI to Work Orders:</strong></p>
+              <p className="jcr-hint">
+                This will create a Work Order with the format: <strong>Rate Contract No + Work Order No + PDI Date</strong>
+                <br />
+                All serial numbers from the bulk upload lists above will be added to the work order.
+              </p>
+            </div>
+            {submitMessage && (
+              <div className={`msg ${submitMessage.type}`}>
+                {submitMessage.text}
+              </div>
+            )}
+            <button 
+              className="btn-export-main" 
+              onClick={handleSubmitToWorkOrder}
+              disabled={submitting}
+              style={{ marginTop: '10px' }}
+            >
+              <Send size={18} /> {submitting ? 'Submitting...' : 'Submit to Work Order'}
+            </button>
           </div>
         </section>
 

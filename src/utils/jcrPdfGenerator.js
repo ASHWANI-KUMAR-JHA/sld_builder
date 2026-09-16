@@ -19,9 +19,44 @@ const formatDate = (dateString) => {
 };
 
 /**
- * Add header to page
+ * Load and cache the Sunfeed logo
  */
-const addHeader = (doc, title, formatNumber, pageWidth) => {
+let cachedLogoDataUrl = null;
+
+const loadSunfeedLogo = async () => {
+  if (cachedLogoDataUrl) return cachedLogoDataUrl;
+  
+  try {
+    const response = await fetch('/SUNFEED LOGO.png');
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        cachedLogoDataUrl = reader.result;
+        resolve(cachedLogoDataUrl);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.warn('Failed to load Sunfeed logo:', error);
+    return null;
+  }
+};
+
+/**
+ * Add header to page with Sunfeed logo
+ */
+const addHeader = (doc, title, formatNumber, pageWidth, logoDataUrl) => {
+  // Add Sunfeed logo in top left corner
+  if (logoDataUrl) {
+    try {
+      doc.addImage(logoDataUrl, 'PNG', 10, 8, 25, 12); // x, y, width, height
+    } catch (error) {
+      console.warn('Failed to add logo to PDF:', error);
+    }
+  }
+  
   // Add format number in top right
   doc.setFontSize(9);
   doc.setFont(undefined, 'italic');
@@ -38,8 +73,8 @@ const addHeader = (doc, title, formatNumber, pageWidth) => {
 /**
  * Generate Format-II: Material Receipt
  */
-const generateFormatII = (doc, formData, pageWidth, pageHeight) => {
-  let yPos = addHeader(doc, 'MATERIAL RECEIPT OF SOLAR STREET LIGHTING SYSTEM', 'Format-II', pageWidth);
+const generateFormatII = (doc, formData, pageWidth, pageHeight, logoDataUrl) => {
+  let yPos = addHeader(doc, 'MATERIAL RECEIPT OF SOLAR STREET LIGHTING SYSTEM', 'Format-II', pageWidth, logoDataUrl);
   
   doc.setFontSize(10);
   doc.setFont(undefined, 'normal');
@@ -110,10 +145,10 @@ const generateFormatII = (doc, formData, pageWidth, pageHeight) => {
 /**
  * Generate Format-III: Joint Commissioning Report Summary
  */
-const generateFormatIII = (doc, formData, pageWidth, pageHeight) => {
+const generateFormatIII = (doc, formData, pageWidth, pageHeight, logoDataUrl) => {
   doc.addPage();
   
-  let yPos = addHeader(doc, 'FORMAT OF JOINT COMMISSIONING REPORT (JCR)', 'Format-III', pageWidth);
+  let yPos = addHeader(doc, 'FORMAT OF JOINT COMMISSIONING REPORT (JCR)', 'Format-III', pageWidth, logoDataUrl);
   
   doc.setFontSize(10);
   doc.setFont(undefined, 'normal');
