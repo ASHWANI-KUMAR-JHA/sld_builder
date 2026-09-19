@@ -3,7 +3,7 @@ import { Search, RefreshCw, Filter } from 'lucide-react';
 import ComboboxWithHistory from './ComboboxWithHistory';
 import InstallationTable from './InstallationTable';
 import { saveJCRDraft, loadJCRDraft, getAllJCRDrafts, deleteJCRDraft } from '../utils/jcrStorage';
-import { generateJCRPDF } from '../utils/jcrPdfGenerator';
+import { generateJCRPDF, generateJCRPreview } from '../utils/jcrPdfGenerator';
 import { fetchInstallations } from '../utils/installations';
 import { getPendingJCRImport, clearPendingJCRImport } from '../utils/jcrDataTransfer';
 import './JCR.css';
@@ -80,6 +80,11 @@ const JCR = ({ onBack, onLogout }) => {
   const [showFilters, setShowFilters] = useState(false);
   const [filterMessage, setFilterMessage] = useState(null);
 
+  // PDF preview state
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
   // Load saved drafts on mount
   useEffect(() => {
     const drafts = getAllJCRDrafts();
@@ -121,6 +126,15 @@ const JCR = ({ onBack, onLogout }) => {
   useEffect(() => {
     setUnsavedChanges(true);
   }, [formData]);
+
+  // Revoke preview blob URL on unmount to avoid memory leaks
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   // Update installations array when systemsInThisJCR changes
   useEffect(() => {
@@ -344,6 +358,70 @@ const JCR = ({ onBack, onLogout }) => {
     }
   };
 
+  // Fill the form with random test data (50 installations) to preview the PDF.
+  const handleFillTestData = () => {
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+    const pad = (n, len) => String(n).padStart(len, '0');
+    const randDate = () => {
+      const d = new Date(2025, randInt(0, 11), randInt(1, 28));
+      return d.toISOString().split('T')[0];
+    };
+
+    const districts = ['AMBALA', 'PANCHKULA', 'YAMUNANAGAR', 'KURUKSHETRA', 'KARNAL'];
+    const blocks = ['NARAINGARH', 'BARARA', 'SAHA', 'SHAHZADPUR', 'MULLANA'];
+    const villages = ['KANJALA', 'BARWALA', 'RAIPUR', 'MANAKPUR', 'DHIN', 'GARNALA', 'KESRI'];
+    const assemblies = ['NARAINGARH', 'AMBALA CITY', 'MULLANA (SC)', 'SADHAURA (SC)'];
+    const names = ['Ram Kumar', 'Suresh Devi', 'Anil Sharma', 'Village Panchayat', 'Govt. School', 'Community Center', 'Rajesh Singh', 'Sunita Rani'];
+
+    const count = 50;
+    const installations = Array.from({ length: count }, (_, i) => ({
+      serialNo: i + 1,
+      beneficiaryName: `${pick(names)} (${pick(villages)})`,
+      latitude: (30 + Math.random()).toFixed(6),
+      longitude: (76 + Math.random()).toFixed(6),
+      photoDate: randDate(),
+      villageGramPanchayat: pick(villages),
+      block: pick(blocks),
+      assemblyConstituency: pick(assemblies),
+      commissioningDate: randDate(),
+      moduleSerialNo: `MOD-${pad(randInt(1, 99999), 5)}`,
+      batterySerialNo: `BAT-${pad(randInt(1, 99999), 5)}`,
+      luminaireSerialNo: `LUM-${pad(randInt(1, 99999), 5)}`,
+      rms: pick(['YES', 'YES', 'NO']),
+    }));
+
+    setFormData(prev => ({
+      ...prev,
+      letterTo: 'The Director New and Renewable Energy Dept & HAREDA',
+      letterAddress: 'Akshay Urja Bhawan, Sector-17, Panchkula Haryana',
+      letterSubject: `Request to release 30% payment against work order no: DNRE/2025-2026/${randInt(10000, 99999)} District ${pick(districts)}`,
+      letterBody: 'With reference to the subject above, we are writing to inform you that we received the order for Supply, Installation and Commissioning of LED based Solar Street Lights. We have completed the installation of the said lights in various villages. We request you to please release our 30% payment against installation receipt. The original Bill and Installation receipt are enclosed for necessary action.',
+      systemName: 'Solar Street Lighting System',
+      district: `${pick(districts)} (BLOCK: ${pick(blocks)}, VILLAGE: ${pick(villages)})`,
+      rateContractNo: `119/HR/RC/E-5/2025-26/${randInt(10000, 99999)} dated 29.01.2026`,
+      workOrderNo: `DNRE/2025-2026/${randInt(10000, 99999)} DATED: 18/02/2026`,
+      supplierName: 'M/S SUNFEED ECOSOLUTIONS INDIA PVT LTD, 527, FIFTH FLOOR, SECTOR-17, PANCHKULA, HARYANA - 134109',
+      totalWorkOrderQty: String(randInt(50, 200)),
+      materialSupplyDate: randDate(),
+      systemsInThisJCR: String(count),
+      installationCompleteDate: randDate(),
+      handoverDate: randDate(),
+      moduleMake: pick(['SENZA (SUN AND SAND EXIM)', 'JAKSON', 'WAAREE']),
+      moduleCapacity: pick(['75', '100', '125']),
+      luminaireMake: pick(['RITIKA', 'BAJAJ', 'CROMPTON']),
+      luminaireCapacity: pick(['12', '15', '20']),
+      batteryMake: pick(['SUNFEED', 'EXIDE', 'AMARON']),
+      batteryCapacity: pick(['384', '480', '512']),
+      year: '2026',
+      preDispatchInspectionDate: randDate(),
+      materialReceiptDate: randDate(),
+      installations,
+    }));
+
+    setFilterMessage({ type: 'success', text: `✓ Filled test data with ${count} random installations.` });
+  };
+
   const handleNewForm = () => {
     if (unsavedChanges) {
       if (!window.confirm('You have unsaved changes. Start a new form anyway?')) {
@@ -380,8 +458,8 @@ const JCR = ({ onBack, onLogout }) => {
     setUnsavedChanges(false);
   };
 
-  const handleGeneratePDF = () => {
-    // Validate required fields
+  // Validate the form before generating/previewing. Returns true if OK.
+  const validateForm = () => {
     const requiredFields = [
       { field: 'district', label: 'District' },
       { field: 'workOrderNo', label: 'Work Order No.' },
@@ -392,40 +470,84 @@ const JCR = ({ onBack, onLogout }) => {
     const missing = requiredFields.filter(({ field }) => !formData[field]);
     if (missing.length > 0) {
       alert(`Please fill required fields: ${missing.map(m => m.label).join(', ')}`);
-      return;
+      return false;
     }
 
     if (formData.installations.length === 0) {
       alert('Please add at least one installation entry.');
-      return;
+      return false;
     }
 
-    // Validate installation data
     const incompleteRows = formData.installations.filter(
       inst => !inst.beneficiaryName || !inst.villageGramPanchayat
     );
-    
+
     if (incompleteRows.length > 0) {
       const proceed = window.confirm(
-        `${incompleteRows.length} installation row(s) have incomplete data. Generate PDF anyway?`
+        `${incompleteRows.length} installation row(s) have incomplete data. Continue anyway?`
       );
-      if (!proceed) return;
+      if (!proceed) return false;
     }
 
-    // Generate PDF
-    const result = generateJCRPDF(formData);
-    
-    if (result.success) {
-      alert(`PDF generated successfully!\nFilename: ${result.filename}`);
-      // Optionally save draft after successful PDF generation
-      if (unsavedChanges) {
-        const save = window.confirm('Would you like to save this form as a draft?');
-        if (save) {
-          handleSaveDraft();
-        }
+    return true;
+  };
+
+  // Open a side preview of the generated PDF
+  const handlePreviewPDF = async () => {
+    if (!validateForm()) return;
+
+    setGenerating(true);
+    try {
+      // Clean up any previous preview URL
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
       }
-    } else {
-      alert(`Failed to generate PDF: ${result.error}`);
+
+      const result = await generateJCRPreview(formData);
+      if (result.success) {
+        setPreviewUrl(result.url);
+        setShowPreview(true);
+      } else {
+        alert(`Failed to generate preview: ${result.error}`);
+      }
+    } catch (err) {
+      alert(`Failed to generate preview: ${err.message}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleClosePreview = () => {
+    setShowPreview(false);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+  };
+
+  const handleGeneratePDF = async () => {
+    if (!validateForm()) return;
+
+    setGenerating(true);
+    try {
+      const result = await generateJCRPDF(formData);
+
+      if (result.success) {
+        alert(`PDF generated successfully!\nFilename: ${result.filename}`);
+        if (unsavedChanges) {
+          const save = window.confirm('Would you like to save this form as a draft?');
+          if (save) {
+            handleSaveDraft();
+          }
+        }
+      } else {
+        alert(`Failed to generate PDF: ${result.error}`);
+      }
+    } catch (err) {
+      alert(`Failed to generate PDF: ${err.message}`);
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -465,6 +587,14 @@ const JCR = ({ onBack, onLogout }) => {
           >
             <span className="btn-icon">+</span> New Form
           </button>
+
+          <button
+            className="btn btn-secondary"
+            onClick={handleFillTestData}
+            title="Fill all fields with 50 random test records to preview the PDF"
+          >
+            <span className="btn-icon">🎲</span> Fill Test Data
+          </button>
           
           <button
             className="btn btn-secondary"
@@ -484,14 +614,47 @@ const JCR = ({ onBack, onLogout }) => {
           </button>
           
           <button
+            className="btn btn-secondary"
+            onClick={handlePreviewPDF}
+            disabled={generating}
+            title="Preview PDF before download"
+          >
+            <span className="btn-icon">👁️</span> {generating ? 'Working...' : 'Preview PDF'}
+          </button>
+
+          <button
             className="btn btn-success"
             onClick={handleGeneratePDF}
+            disabled={generating}
             title="Generate PDF document"
           >
-            <span className="btn-icon">📄</span> Generate PDF
+            <span className="btn-icon">📄</span> {generating ? 'Working...' : 'Generate PDF'}
           </button>
         </div>
       </div>
+
+      {showPreview && previewUrl && (
+        <div className="jcr-preview-overlay" onClick={handleClosePreview}>
+          <div className="jcr-preview-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="jcr-preview-header">
+              <h3>PDF Preview</h3>
+              <div className="jcr-preview-actions">
+                <button className="btn btn-success btn-small" onClick={handleGeneratePDF}>
+                  ⬇ Download
+                </button>
+                <button className="btn btn-secondary btn-small" onClick={handleClosePreview}>
+                  ✕ Close
+                </button>
+              </div>
+            </div>
+            <iframe
+              title="JCR PDF Preview"
+              src={previewUrl}
+              className="jcr-preview-frame"
+            />
+          </div>
+        </div>
+      )}
 
       {showDraftList && savedDrafts.length > 0 && (
         <div className="draft-list">

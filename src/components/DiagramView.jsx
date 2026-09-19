@@ -1,7 +1,7 @@
 import SLDDiagram from './SLDDiagram';
 import './DiagramView.css';
 
-function DiagramView({ formData, derivedValues }) {
+function DiagramView({ formData, derivedValues, unlocked, onSecretTap }) {
   return (
     <div className="diagram-view">
       <div className="diagram-header">
@@ -11,7 +11,7 @@ function DiagramView({ formData, derivedValues }) {
         </p>
       </div>
       <div className="diagram-canvas" id="sld-diagram">
-        <SLDDiagram formData={formData} derivedValues={derivedValues} />
+        <SLDDiagram formData={formData} derivedValues={derivedValues} unlocked={unlocked} onSecretTap={onSecretTap} />
       </div>
     </div>
   );

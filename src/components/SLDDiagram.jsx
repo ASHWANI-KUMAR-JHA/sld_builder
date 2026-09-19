@@ -1,8 +1,30 @@
+import { useRef } from 'react';
 import './SLDDiagram.css';
 
-function SLDDiagram({ formData, derivedValues }) {
+function SLDDiagram({ formData, derivedValues, unlocked, onSecretTap }) {
   const width = 1100;
   const height = 780;
+
+  // Hidden 3-tap gate: count taps on the inverter's blue dot. Three taps
+  // within 1.5s toggles the unlock state via onSecretTap.
+  const tapCountRef = useRef(0);
+  const tapTimerRef = useRef(null);
+
+  const handleDotTap = () => {
+    tapCountRef.current += 1;
+    clearTimeout(tapTimerRef.current);
+
+    if (tapCountRef.current >= 3) {
+      tapCountRef.current = 0;
+      if (onSecretTap) onSecretTap();
+      return;
+    }
+
+    // Reset the counter if taps are too far apart
+    tapTimerRef.current = setTimeout(() => {
+      tapCountRef.current = 0;
+    }, 1500);
+  };
 
   // Flow based on reference: Panels(top-left) -> Inverter(top-center) -> ACDB(top-right)
   // Then down: ACDB -> Solar Meter(right) -> Net Meter(bottom-center) -> LT Panel(bottom-center)
@@ -112,7 +134,18 @@ function SLDDiagram({ formData, derivedValues }) {
         ))}
         {/* Display/indicator area */}
         <rect x={x + 40} y={y + 50} width={80} height={40} fill="#1a5276" stroke="#555" strokeWidth="1" rx="3" />
-        <circle cx={x + 80} cy={y + 70} r={12} fill="#2980b9" opacity="0.8" />
+        {/* Hidden 3-tap gate button (looks like the inverter indicator dot) */}
+        <circle
+          cx={x + 80}
+          cy={y + 70}
+          r={12}
+          fill="#2980b9"
+          opacity="0.8"
+          stroke={unlocked ? '#27ae60' : 'none'}
+          strokeWidth={unlocked ? 2.5 : 0}
+          style={{ cursor: 'pointer' }}
+          onClick={handleDotTap}
+        />
         {/* DC port */}
         <rect x={x + 30} y={y + h - 30} width={35} height={20} fill="#222" stroke="#555" rx="2" />
         <text x={x + 47} y={y + h - 16} textAnchor="middle" fill="white" fontSize="8" fontWeight="bold">DC</text>

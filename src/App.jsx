@@ -40,10 +40,10 @@ const isGeoDebug =
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('geo') === 'debug';
 
-// Developer mode - bypass login with ?dev=true
+// Developer mode - bypass login only with ?dev=ashwani
 const isDevMode =
   typeof window !== 'undefined' &&
-  new URLSearchParams(window.location.search).get('dev') === 'true';
+  new URLSearchParams(window.location.search).get('dev') === 'ashwani';
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(() => isDevMode || isAuthenticated());
@@ -58,6 +58,20 @@ function App() {
   });
   const [showProjectManager, setShowProjectManager] = useState(false);
   const [showExport, setShowExport] = useState(false);
+
+  // Hidden 3-tap gate on the inverter's blue dot. All workflows stay locked
+  // until the user taps the dot 3 times; tapping 3 times again locks it back.
+  const [unlocked, setUnlocked] = useState(false);
+
+  const handleSecretTap = useCallback(() => {
+    setUnlocked(prev => !prev);
+  }, []);
+
+  // Guard navigation: only allow leaving the generator page when unlocked.
+  const goToPage = useCallback((page) => {
+    if (!unlocked) return; // silently ignore while locked (hidden gate)
+    setCurrentPage(page);
+  }, [unlocked]);
 
   const derivedValues = calculateDerivedValues(formData);
 
@@ -100,43 +114,47 @@ function App() {
     return <PublicInstallationForm onLogout={handleLogout} initialWorkOrder={workOrderParam} />;
   }
 
+  // When locked, ignore any gated page and fall through to the generator.
+  const gatedPages = ['builder', 'flashReport', 'mergePdf', 'workOrders', 'jcr', 'pdi', 'installations', 'users'];
+  const activePage = (!unlocked && gatedPages.includes(currentPage)) ? 'generator' : currentPage;
+
   // Show the interactive SLD builder page
-  if (currentPage === 'builder') {
+  if (activePage === 'builder') {
     return <SLDBuilder onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
   }
 
   // Show the Flash Report page
-  if (currentPage === 'flashReport') {
+  if (activePage === 'flashReport') {
     return <FlashReport onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
   }
 
   // Show the Merge PDF page
-  if (currentPage === 'mergePdf') {
+  if (activePage === 'mergePdf') {
     return <MergePDF onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
   }
 
   // Show the Work Orders page
-  if (currentPage === 'workOrders') {
+  if (activePage === 'workOrders') {
     return <WorkOrders onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
   }
 
   // Show the JCR (Joint Commissioning Report) page
-  if (currentPage === 'jcr') {
+  if (activePage === 'jcr') {
     return <JCR onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
   }
 
   // Show the PDI (Pre-Dispatch Inspection) page
-  if (currentPage === 'pdi') {
+  if (activePage === 'pdi') {
     return <PDI onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
   }
 
   // Show the Installation Register page
-  if (currentPage === 'installations') {
+  if (activePage === 'installations') {
     return <InstallationRegister onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
   }
 
   // Show the User Manager page
-  if (currentPage === 'users') {
+  if (activePage === 'users') {
     return <UserManager onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
   }
 
@@ -147,14 +165,14 @@ function App() {
         onProjectsClick={() => setShowProjectManager(true)}
         onExportClick={() => setShowExport(true)}
         onResetClick={handleReset}
-        onBuilderClick={() => setCurrentPage('builder')}
-        onFlashReportClick={() => setCurrentPage('flashReport')}
-        onMergePdfClick={() => setCurrentPage('mergePdf')}
-        onWorkOrdersClick={() => setCurrentPage('workOrders')}
-        onInstallationsClick={() => setCurrentPage('installations')}
-        onJcrClick={() => setCurrentPage('jcr')}
-        onPdiClick={() => setCurrentPage('pdi')}
-        onUsersClick={() => setCurrentPage('users')}
+        onBuilderClick={() => goToPage('builder')}
+        onFlashReportClick={() => goToPage('flashReport')}
+        onMergePdfClick={() => goToPage('mergePdf')}
+        onWorkOrdersClick={() => goToPage('workOrders')}
+        onInstallationsClick={() => goToPage('installations')}
+        onJcrClick={() => goToPage('jcr')}
+        onPdiClick={() => goToPage('pdi')}
+        onUsersClick={() => goToPage('users')}
         onLogoutClick={handleLogout}
       />
 
@@ -171,6 +189,8 @@ function App() {
             <DiagramView
               formData={formData}
               derivedValues={derivedValues}
+              unlocked={unlocked}
+              onSecretTap={handleSecretTap}
             />
           }
         />

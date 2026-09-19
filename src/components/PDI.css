@@ -6,7 +6,7 @@
   overflow: hidden;
 }
 
-.jcr-header {
+.jcr-page .jcr-header {
   background: #1a1a2e;
   color: #fff;
   padding: 0 16px;
@@ -16,42 +16,42 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.jcr-header .header-inner {
+.jcr-page .jcr-header .header-inner {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.jcr-header .header-left,
-.jcr-header .header-right {
+.jcr-page .jcr-header .header-left,
+.jcr-page .jcr-header .header-right {
   display: flex;
   align-items: center;
   gap: 16px;
 }
 
-.jcr-header .header-right {
+.jcr-page .jcr-header .header-right {
   gap: 8px;
 }
 
-.jcr-header .logo {
+.jcr-page .jcr-header .logo {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.jcr-header .logo-text h1 {
+.jcr-page .jcr-header .logo-text h1 {
   font-size: 16px;
   margin: 0;
   font-weight: 600;
 }
 
-.jcr-header .logo-text .subtitle {
+.jcr-page .jcr-header .logo-text .subtitle {
   font-size: 11px;
   opacity: 0.7;
 }
 
-.jcr-header .header-btn {
+.jcr-page .jcr-header .header-btn {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -65,20 +65,20 @@
   transition: all 0.2s;
 }
 
-.jcr-header .header-btn:hover {
+.jcr-page .jcr-header .header-btn:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.jcr-header .header-btn.export {
+.jcr-page .jcr-header .header-btn.export {
   background: #2563eb;
   border-color: #2563eb;
 }
 
-.jcr-header .header-btn.export:hover {
+.jcr-page .jcr-header .header-btn.export:hover {
   background: #1d4ed8;
 }
 
-.jcr-header .header-btn.logout:hover {
+.jcr-page .jcr-header .header-btn.logout:hover {
   background: rgba(239, 68, 68, 0.2);
   border-color: rgba(239, 68, 68, 0.4);
 }
