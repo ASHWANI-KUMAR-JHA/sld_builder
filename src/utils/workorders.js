@@ -29,39 +29,106 @@ export async function fetchWorkOrders() {
   return data || [];
 }
 
+// Normalize a list of order numbers: trim, drop blanks, de-duplicate
+// (case-insensitive) while preserving first-seen casing and order.
+export function normalizeOrderNumbers(list) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of list || []) {
+    const num = String(raw || '').trim();
+    if (!num) continue;
+    const key = num.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(num);
+  }
+  return out;
+}
+
 // Create a work order and return the created row.
-export async function createWorkOrder({ name, description = '', createdBy = '' }) {
+// `orderNumbers` is the array of individual work order numbers this batch
+// covers; the shared serial pool is reachable by any one of them.
+export async function createWorkOrder({ name, description = '', createdBy = '', orderNumbers = [] }) {
   const clean = String(name || '').trim();
   if (!clean) throw new Error('Work order name is required.');
+  const nums = normalizeOrderNumbers(orderNumbers);
   const { data, error } = await supabase
     .from(WORK_ORDERS_TABLE)
-    .insert([{ name: clean, description: description || null, created_by: createdBy || null }])
+    .insert([{
+      name: clean,
+      order_numbers: nums,
+      description: description || null,
+      created_by: createdBy || null,
+    }])
     .select();
   if (error) throw error;
   return data?.[0] || null;
 }
 
-// Find an existing work order by name (case-insensitive) or create it if it doesn't exist.
-export async function findOrCreateWorkOrder({ name, description = '', createdBy = '' }) {
+// Find an existing work order by name (case-insensitive) or create it if it
+// doesn't exist. When creating, `orderNumbers` is stored as an array; when a
+// match is found, any new order numbers are merged into the existing row.
+export async function findOrCreateWorkOrder({ name, description = '', createdBy = '', orderNumbers = [] }) {
   const clean = String(name || '').trim();
   if (!clean) throw new Error('Work order name is required.');
-  
+  const nums = normalizeOrderNumbers(orderNumbers);
+
   // First, try to find existing work order
   const { data: existing, error: findError } = await supabase
     .from(WORK_ORDERS_TABLE)
     .select('*')
     .ilike('name', clean)
     .limit(1);
-  
+
   if (findError) throw findError;
-  
-  // If found, return it
+
+  // If found, merge in any new order numbers, then return it.
   if (existing && existing.length > 0) {
-    return existing[0];
+    const row = existing[0];
+    const merged = normalizeOrderNumbers([...(row.order_numbers || []), ...nums]);
+    if (merged.length !== (row.order_numbers || []).length) {
+      const { data: updated, error: updErr } = await supabase
+        .from(WORK_ORDERS_TABLE)
+        .update({ order_numbers: merged })
+        .eq('id', row.id)
+        .select();
+      if (updErr) throw updErr;
+      return updated?.[0] || row;
+    }
+    return row;
   }
-  
+
   // Otherwise, create new work order
-  return await createWorkOrder({ name: clean, description, createdBy });
+  return await createWorkOrder({ name: clean, description, createdBy, orderNumbers: nums });
+}
+
+// Find a work order whose order_numbers array contains the given number
+// (case-insensitive). Returns the row or null. Lets the public form reach the
+// shared serial pool by any one of the listed order numbers.
+export async function findWorkOrderByOrderNumber(orderNumber) {
+  const clean = String(orderNumber || '').trim();
+  if (!clean) return null;
+  // order_numbers stores original casing, so match case-insensitively by
+  // scanning candidates that contain the exact value first, then falling back
+  // to a client-side case-insensitive compare.
+  const { data, error } = await supabase
+    .from(WORK_ORDERS_TABLE)
+    .select('*')
+    .contains('order_numbers', [clean])
+    .limit(1);
+  if (error) throw error;
+  if (data && data.length > 0) return data[0];
+
+  // Case-insensitive fallback: look across recent orders.
+  const { data: all, error: allErr } = await supabase
+    .from(WORK_ORDERS_TABLE)
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (allErr) throw allErr;
+  const lower = clean.toLowerCase();
+  return (all || []).find(
+    (o) => (o.order_numbers || []).some((n) => String(n).toLowerCase() === lower)
+  ) || null;
 }
 
 export async function deleteWorkOrder(id) {

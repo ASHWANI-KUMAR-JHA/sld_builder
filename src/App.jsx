@@ -7,7 +7,9 @@ import ProjectManager from './components/ProjectManager';
 import ExportPanel from './components/ExportPanel';
 import SLDBuilder from './components/SLDBuilder/SLDBuilder';
 import FlashReport from './components/FlashReport';
+import LetterGenerator from './components/LetterGenerator';
 import JCR from './components/JCR';
+import JCRSelect from './components/JCRSelect';
 import PDI from './components/PDI';
 import MergePDF from './components/MergePDF';
 import WorkOrders from './components/WorkOrders';
@@ -61,15 +63,16 @@ function App() {
 
   // Hidden 3-tap gate on the inverter's blue dot. All workflows stay locked
   // until the user taps the dot 3 times; tapping 3 times again locks it back.
-  const [unlocked, setUnlocked] = useState(false);
+  // TEMPORARILY DISABLED FOR TESTING — everything is unlocked by default.
+  const [unlocked, setUnlocked] = useState(true);
 
   const handleSecretTap = useCallback(() => {
-    setUnlocked(prev => !prev);
+    // setUnlocked(prev => !prev);
   }, []);
 
   // Guard navigation: only allow leaving the generator page when unlocked.
   const goToPage = useCallback((page) => {
-    if (!unlocked) return; // silently ignore while locked (hidden gate)
+    // if (!unlocked) return; // silently ignore while locked (hidden gate)
     setCurrentPage(page);
   }, [unlocked]);
 
@@ -115,7 +118,7 @@ function App() {
   }
 
   // When locked, ignore any gated page and fall through to the generator.
-  const gatedPages = ['builder', 'flashReport', 'mergePdf', 'workOrders', 'jcr', 'pdi', 'installations', 'users'];
+  const gatedPages = ['builder', 'flashReport', 'letterGenerator', 'mergePdf', 'workOrders', 'jcr', 'jcrSelect', 'pdi', 'installations', 'users'];
   const activePage = (!unlocked && gatedPages.includes(currentPage)) ? 'generator' : currentPage;
 
   // Show the interactive SLD builder page
@@ -126,6 +129,11 @@ function App() {
   // Show the Flash Report page
   if (activePage === 'flashReport') {
     return <FlashReport onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
+  }
+
+  // Show the Letter Generator page
+  if (activePage === 'letterGenerator') {
+    return <LetterGenerator onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
   }
 
   // Show the Merge PDF page
@@ -141,6 +149,11 @@ function App() {
   // Show the JCR (Joint Commissioning Report) page
   if (activePage === 'jcr') {
     return <JCR onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
+  }
+
+  // Show the JCR Select-by-Work-Order page
+  if (activePage === 'jcrSelect') {
+    return <JCRSelect onBack={() => setCurrentPage('generator')} onLogout={handleLogout} />;
   }
 
   // Show the PDI (Pre-Dispatch Inspection) page
@@ -167,10 +180,12 @@ function App() {
         onResetClick={handleReset}
         onBuilderClick={() => goToPage('builder')}
         onFlashReportClick={() => goToPage('flashReport')}
+        onLetterGeneratorClick={() => goToPage('letterGenerator')}
         onMergePdfClick={() => goToPage('mergePdf')}
         onWorkOrdersClick={() => goToPage('workOrders')}
         onInstallationsClick={() => goToPage('installations')}
         onJcrClick={() => goToPage('jcr')}
+        onJcrSelectClick={() => goToPage('jcrSelect')}
         onPdiClick={() => goToPage('pdi')}
         onUsersClick={() => goToPage('users')}
         onLogoutClick={handleLogout}

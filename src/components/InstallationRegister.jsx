@@ -10,6 +10,7 @@ import {
   INSTALLATION_FIELDS,
   emptyInstallation,
   fetchInstallations,
+  fetchInstallationsPage,
   insertInstallations,
   updateInstallation,
   deleteInstallation,
@@ -37,11 +38,14 @@ function InstallationRegister({ onBack, onLogout }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
 
-  // Dashboard state
+  // Dashboard state — server-side paginated.
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [dashError, setDashError] = useState(null);
+  // Current 1-based page and total matching row count (from the server).
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   // Tracks whether the dashboard dataset has been fetched at least once, so we
   // don't hit the API again every time the user switches back to the dashboard.
   const [loaded, setLoaded] = useState(false);
@@ -138,35 +142,54 @@ function InstallationRegister({ onBack, onLogout }) {
     }
   }, [rows, projectName, workOrder]);
 
-  // Fetch the full dataset once. Search/filtering is done client-side, so this
-  // does not need to re-hit the API when the search text changes.
-  const loadRecords = useCallback(async () => {
+  // Fetch a single page from the server. Only hits the API for the requested
+  // page + search term, so switching pages / searching triggers one call each.
+  const loadRecords = useCallback(async (opts = {}) => {
+    const targetPage = opts.page ?? page;
+    const targetSearch = opts.search ?? search;
     setLoading(true);
     setDashError(null);
     try {
-      // Fetch everything in batches so the 1000-row cap is bypassed and the
-      // client-side filters/dropdowns see the full dataset.
-      const data = await fetchInstallations();
+      const { data, count } = await fetchInstallationsPage({
+        search: targetSearch,
+        page: targetPage,
+        pageSize: PAGE_SIZE,
+      });
       setRecords(data);
+      setTotal(count);
+      setPage(targetPage);
       setLoaded(true);
     } catch (err) {
       setDashError(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, search]);
 
   useEffect(() => {
     // Only fetch the first time the dashboard is opened. Switching tabs back
     // and forth reuses the already-loaded data; use Refresh to reload.
-    if (mode === 'dashboard' && !loaded) loadRecords();
+    if (mode === 'dashboard' && !loaded) loadRecords({ page: 1 });
   }, [mode, loaded, loadRecords]);
+
+  // Debounced server-side search: re-query page 1 whenever the term settles.
+  useEffect(() => {
+    if (mode !== 'dashboard' || !loaded) return;
+    const t = setTimeout(() => loadRecords({ page: 1, search }), 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  const goToPage = useCallback((targetPage) => {
+    loadRecords({ page: targetPage });
+  }, [loadRecords]);
 
   const handleDelete = useCallback(async (id) => {
     if (!window.confirm('Delete this installation record?')) return;
     try {
       await deleteInstallation(id);
       setRecords((prev) => prev.filter((r) => r.id !== id));
+      setTotal((t) => Math.max(0, t - 1));
     } catch (err) {
       setDashError(`Delete failed: ${err.message}`);
     }
@@ -249,6 +272,9 @@ function InstallationRegister({ onBack, onLogout }) {
             handleDelete={handleDelete}
             handleUpdate={handleUpdate}
             dashError={dashError}
+            page={page}
+            total={total}
+            goToPage={goToPage}
           />
         )}
       </div>
@@ -376,7 +402,10 @@ const FILTER_DEFS = [
   { key: 'submitted_by', label: 'Creator' },
 ];
 
-function DashboardView({ records, loading, search, setSearch, loadRecords, handleDelete, handleUpdate, dashError }) {
+function DashboardView({
+  records, loading, search, setSearch, loadRecords, handleDelete, handleUpdate, dashError,
+  page, total, goToPage,
+}) {
   // Selected values per filter key — an array of strings ([] = all).
   const [filters, setFilters] = useState({});
   // Which filter dropdown is currently open.
@@ -391,8 +420,6 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
   const [editDraft, setEditDraft] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState(null);
-  // Current 1-based page for the filtered+sorted result set.
-  const [page, setPage] = useState(1);
   // Selected records for JCR submission
   const [selectedIds, setSelectedIds] = useState(new Set());
 
@@ -513,21 +540,13 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
     return opts;
   }, [records]);
 
-  // Apply free-text search, dropdown filters, then sorting — all client-side.
+  // Search is handled server-side. Dropdown filters, date range and sorting are
+  // applied client-side to the current page of records.
   const visibleRecords = useMemo(() => {
     const startTs = startDate ? new Date(`${startDate}T00:00:00`).getTime() : null;
     const endTs = endDate ? new Date(`${endDate}T23:59:59.999`).getTime() : null;
-    const term = search.trim().toLowerCase();
-    const SEARCH_KEYS = ['project_name', 'work_order', 'exact_location', 'village', 'module_serial', 'battery_serial', 'luminaire_serial'];
 
     let list = records.filter((r) => {
-      if (term) {
-        const matchesSearch = SEARCH_KEYS.some((k) =>
-          String(r[k] ?? '').toLowerCase().includes(term)
-        );
-        if (!matchesSearch) return false;
-      }
-
       const matchesFilters = FILTER_DEFS.every(({ key }) => {
         const selected = filters[key];
         if (!selected || selected.length === 0) return true;
@@ -567,26 +586,12 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
       });
     }
     return list;
-  }, [records, filters, sort, startDate, endDate, search]);
+  }, [records, filters, sort, startDate, endDate]);
 
-  const total = visibleRecords.length;
+  // Server-driven pagination: total is the count of all matching rows and
+  // pageCount is derived from it. The current page's rows are what we render.
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  // Keep the current page in range whenever the filtered set changes.
-  useEffect(() => {
-    setPage((p) => Math.min(Math.max(1, p), pageCount));
-  }, [pageCount]);
-
-  // Reset to the first page when filters, search results or sort change.
-  useEffect(() => {
-    setPage(1);
-  }, [filters, sort, startDate, endDate, records, search]);
-
-  // The rows rendered for the current page.
-  const pagedRecords = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return visibleRecords.slice(start, start + PAGE_SIZE);
-  }, [visibleRecords, page]);
+  const pagedRecords = visibleRecords;
 
   const pageStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const pageEnd = Math.min(page * PAGE_SIZE, total);
@@ -603,31 +608,41 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
     return sort.dir === 'asc' ? ' ▲' : ' ▼';
   };
 
-  // Export the currently filtered + sorted records to a CSV file.
-  const exportReport = useCallback(() => {
-    if (visibleRecords.length === 0) return;
-    const esc = (v) => {
-      const s = v == null ? '' : String(v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const exportFields = [...INSTALLATION_FIELDS, { key: 'submitted_by', label: 'Creator' }];
-    const header = exportFields.map((f) => f.label);
-    const lines = [header.map(esc).join(',')];
-    for (const r of visibleRecords) {
-      lines.push(exportFields.map((f) => esc(r[f.key])).join(','));
+  // Export ALL records matching the current search to a CSV file. This fetches
+  // the full matching dataset (bypassing pagination) so the export is complete.
+  const [exporting, setExporting] = useState(false);
+  const exportReport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const all = await fetchInstallations({ search });
+      if (all.length === 0) return;
+      const esc = (v) => {
+        const s = v == null ? '' : String(v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const exportFields = [...INSTALLATION_FIELDS, { key: 'submitted_by', label: 'Creator' }];
+      const header = exportFields.map((f) => f.label);
+      const lines = [header.map(esc).join(',')];
+      for (const r of all) {
+        lines.push(exportFields.map((f) => esc(r[f.key])).join(','));
+      }
+      // Prepend BOM so Excel opens UTF-8 correctly.
+      const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().slice(0, 10);
+      a.download = `installations_report_${stamp}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`Export failed: ${err.message}`);
+    } finally {
+      setExporting(false);
     }
-    // Prepend BOM so Excel opens UTF-8 correctly.
-    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const stamp = new Date().toISOString().slice(0, 10);
-    a.download = `installations_report_${stamp}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [visibleRecords]);
+  }, [search]);
 
   return (
     <>
@@ -647,16 +662,16 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button className="btn-refresh" onClick={loadRecords}>
+        <button className="btn-refresh" onClick={() => loadRecords({ page })}>
           <RefreshCw size={16} /> {loading ? 'Loading…' : 'Refresh'}
         </button>
         <button
           className="btn-export"
           onClick={exportReport}
-          disabled={visibleRecords.length === 0}
-          title="Export the filtered records to CSV"
+          disabled={exporting || total === 0}
+          title="Export all matching records to CSV"
         >
-          <Download size={16} /> Export Report
+          <Download size={16} /> {exporting ? 'Exporting…' : 'Export Report'}
         </button>
         <button
           className="btn-submit-jcr"
@@ -909,16 +924,16 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
           <div className="page-controls">
             <button
               className="page-btn"
-              onClick={() => setPage(1)}
-              disabled={page <= 1}
+              onClick={() => goToPage(1)}
+              disabled={page <= 1 || loading}
               title="First page"
             >
               <ChevronsLeft size={16} />
             </button>
             <button
               className="page-btn"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
+              onClick={() => goToPage(Math.max(1, page - 1))}
+              disabled={page <= 1 || loading}
               title="Previous page"
             >
               <ChevronLeft size={16} />
@@ -926,16 +941,16 @@ function DashboardView({ records, loading, search, setSearch, loadRecords, handl
             <span className="page-current">Page {page} / {pageCount}</span>
             <button
               className="page-btn"
-              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-              disabled={page >= pageCount}
+              onClick={() => goToPage(Math.min(pageCount, page + 1))}
+              disabled={page >= pageCount || loading}
               title="Next page"
             >
               <ChevronRight size={16} />
             </button>
             <button
               className="page-btn"
-              onClick={() => setPage(pageCount)}
-              disabled={page >= pageCount}
+              onClick={() => goToPage(pageCount)}
+              disabled={page >= pageCount || loading}
               title="Last page"
             >
               <ChevronsRight size={16} />

@@ -892,3 +892,62 @@
   font-size: 13px;
   color: #78350f;
 }
+
+/* Location debug panel: shows the raw reverse-geocode response so field
+   issues (wrong village/suburb) can be diagnosed on the spot. */
+.pf-geo-debug {
+  margin-top: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+}
+
+.pf-geo-debug > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #334155;
+}
+
+.pf-geo-debug-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 16px;
+  margin: 10px 0;
+}
+
+.pf-geo-debug-list > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.pf-geo-debug-list .pf-geo-debug-full {
+  grid-column: 1 / -1;
+}
+
+.pf-geo-debug-list dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #94a3b8;
+}
+
+.pf-geo-debug-list dd {
+  margin: 0;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.pf-geo-debug-raw {
+  margin: 6px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  white-space: pre;
+}

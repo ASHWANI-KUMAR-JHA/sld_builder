@@ -68,9 +68,10 @@ function WorkOrders({ onBack, onLogout }) {
   const filteredOrders = useMemo(() => {
     if (!searchQuery.trim()) return orders;
     const query = searchQuery.toLowerCase();
-    return orders.filter((order) => 
+    return orders.filter((order) =>
       order.name.toLowerCase().includes(query) ||
-      (order.description && order.description.toLowerCase().includes(query))
+      (order.description && order.description.toLowerCase().includes(query)) ||
+      (order.order_numbers || []).some((n) => String(n).toLowerCase().includes(query))
     );
   }, [orders, searchQuery]);
 
@@ -302,6 +303,14 @@ function WorkOrderCard({ order, expanded, onToggle, onDelete }) {
           <div>
             <strong>{order.name}</strong>
             {order.description && <span className="wo-card-desc">{order.description}</span>}
+            {(order.order_numbers || []).length > 0 && (
+              <div className="wo-order-nos">
+                <span className="wo-order-nos-label">Work Order No(s):</span>
+                {order.order_numbers.map((num, i) => (
+                  <span key={`${num}-${i}`} className="wo-order-no-chip">{num}</span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="wo-card-stats">

@@ -40,12 +40,18 @@ export function formatCoord(value, digits = 6) {
 // Reverse-geocode a latitude / longitude into place details using the free
 // OpenStreetMap Nominatim API (no key required). Returns an object mapping the
 // caller's semantics:
-//   village  -> address.suburb (falls back to village / hamlet / town)
+//   village  -> address.suburb (falls back to village / hamlet / town / neighbourhood)
 //   assembly -> address.city   (falls back to town / county / municipality)
 //   state    -> address.state
+// The full Nominatim payload is returned under `raw` so callers can display /
+// debug exactly what the API sent back.
 // Any lookup failure resolves to empty strings so the flow never blocks on it.
+//
+// NOTE: `zoom=18` is used to match the Geolocation Inspector (GeoDebug) page.
+// A lower zoom (e.g. 14) makes Nominatim snap to a larger/coarser area, which
+// is why the form previously resolved a different suburb than the debug page.
 export async function reverseGeocode(latitude, longitude) {
-  const empty = { village: '', assembly: '', state: '', display: '' };
+  const empty = { village: '', assembly: '', state: '', display: '', raw: null };
   const lat = Number(latitude);
   const lng = Number(longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return empty;
@@ -53,7 +59,7 @@ export async function reverseGeocode(latitude, longitude) {
   try {
     const url =
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2` +
-      `&lat=${lat}&lon=${lng}&zoom=14&addressdetails=1`;
+      `&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
     const res = await fetch(url, {
       headers: { Accept: 'application/json' },
     });
@@ -61,10 +67,14 @@ export async function reverseGeocode(latitude, longitude) {
     const data = await res.json();
     const a = data.address || {};
     return {
-      village: a.suburb || a.village || a.hamlet || a.town || a.city_district || '',
-      assembly: a.city || a.town || a.municipality || a.county || a.state_district || '',
+      village:
+        a.suburb || a.neighbourhood || a.village || a.hamlet ||
+        a.town || a.city_district || a.residential || '',
+      assembly:
+        a.city || a.town || a.municipality || a.county || a.state_district || '',
       state: a.state || '',
       display: data.display_name || '',
+      raw: data,
     };
   } catch {
     return empty;
@@ -127,7 +137,10 @@ function drawStamp(ctx, canvasWidth, canvasHeight, lines) {
 // `source`   : File | Blob of the original photo
 // `latitude` : number
 // `longitude`: number
-// `place`    : optional { village, assembly, state } from reverseGeocode()
+// `place`    : optional address details to burn onto the photo. Any of:
+//              { exact_location, village, block, assembly, state } — whichever
+//              are present are stamped. This can come from reverseGeocode() or
+//              directly from the values the user typed into the form fields.
 // `fileName` : desired output file name (defaults to original / site-photo)
 export async function stampCoordinatesOnImage(source, latitude, longitude, place = {}, fileName) {
   const img = await loadImage(source);
@@ -143,7 +156,9 @@ export async function stampCoordinatesOnImage(source, latitude, longitude, place
   const lines = [
     `Lat ${formatCoord(latitude)}  Long ${formatCoord(longitude)}`,
   ];
+  if (place.exact_location) lines.push(`Location: ${place.exact_location}`);
   if (place.village) lines.push(`Village: ${place.village}`);
+  if (place.block) lines.push(`Block: ${place.block}`);
   if (place.assembly) lines.push(`Assembly: ${place.assembly}`);
   if (place.state) lines.push(`State: ${place.state}`);
   lines.push(stamp.toLocaleDateString());

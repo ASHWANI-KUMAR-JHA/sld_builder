@@ -1,8 +1,8 @@
-import { FolderOpen, Download, RotateCcw, PenTool, LogOut, FileSpreadsheet, Combine, ClipboardList, FileCheck, Users, Package, ClipboardCheck } from 'lucide-react';
+import { FolderOpen, Download, RotateCcw, PenTool, LogOut, FileSpreadsheet, Combine, ClipboardList, FileCheck, Users, Package, ClipboardCheck, Mail } from 'lucide-react';
 import Logo from './Logo';
 import './Header.css';
 
-function Header({ companyName, onProjectsClick, onExportClick, onResetClick, onBuilderClick, onFlashReportClick, onMergePdfClick, onWorkOrdersClick, onInstallationsClick, onJcrClick, onPdiClick, onUsersClick, onLogoutClick }) {
+function Header({ companyName, onProjectsClick, onExportClick, onResetClick, onBuilderClick, onFlashReportClick, onLetterGeneratorClick, onMergePdfClick, onWorkOrdersClick, onInstallationsClick, onJcrClick, onJcrSelectClick, onPdiClick, onUsersClick, onLogoutClick }) {
   return (
     <header className="header">
       <div className="header-inner">
@@ -24,6 +24,10 @@ function Header({ companyName, onProjectsClick, onExportClick, onResetClick, onB
             <FileSpreadsheet size={18} />
             <span>Flash Report</span>
           </button>
+          <button className="header-btn primary" onClick={onLetterGeneratorClick} title="Letter Generator">
+            <Mail size={18} />
+            <span>Letters</span>
+          </button>
           <button className="header-btn primary" onClick={onMergePdfClick} title="Merge PDF Files">
             <Combine size={18} />
             <span>Merge PDF</span>
@@ -39,6 +43,10 @@ function Header({ companyName, onProjectsClick, onExportClick, onResetClick, onB
           <button className="header-btn primary" onClick={onJcrClick} title="Joint Commissioning Report (JCR)">
             <FileCheck size={18} />
             <span>JCR</span>
+          </button>
+          <button className="header-btn primary" onClick={onJcrSelectClick} title="JCR - Select by Work Order">
+            <FileCheck size={18} />
+            <span>JCR Select</span>
           </button>
           <button className="header-btn primary" onClick={onPdiClick} title="Pre-Dispatch Inspection (PDI)">
             <ClipboardCheck size={18} />

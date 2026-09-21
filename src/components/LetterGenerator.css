@@ -1,0 +1,395 @@
+.letter-gen-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f5f7fa;
+  overflow: hidden;
+}
+
+.letter-gen-header {
+  background: #1a1a2e;
+  color: #fff;
+  padding: 0 16px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.letter-gen-header .header-inner {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.letter-gen-header .header-left,
+.letter-gen-header .header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.letter-gen-header .logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.letter-gen-header .logo-text h1 {
+  font-size: 16px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.letter-gen-header .logo-text .subtitle {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.letter-gen-header .header-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.letter-gen-header .header-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.letter-gen-header .header-btn.logout:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.letter-gen-body {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.letter-gen-status {
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  color: #3730a3;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.letter-gen-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .letter-gen-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.letter-gen-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lg-panel {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.lg-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.lg-panel-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.lg-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.lg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.lg-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.lg-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.lg-btn.primary {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #fff;
+}
+
+.lg-btn.primary:hover:not(:disabled) {
+  background: #4338ca;
+}
+
+.lg-btn.danger {
+  background: #fff;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.lg-btn.danger:hover:not(:disabled) {
+  background: #fef2f2;
+}
+
+.lg-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4b5563;
+  margin: 12px 0 5px;
+}
+
+.lg-hint {
+  font-weight: 400;
+  color: #9ca3af;
+  font-size: 11px;
+}
+
+.lg-input,
+.lg-select,
+.lg-textarea {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.lg-input:focus,
+.lg-select:focus,
+.lg-textarea:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+.lg-textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.lg-load-row {
+  display: flex;
+  gap: 8px;
+}
+
+.lg-load-row .lg-select {
+  flex: 1;
+}
+
+.lg-count {
+  font-size: 12px;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+.lg-empty {
+  font-size: 13px;
+  color: #9ca3af;
+  margin: 4px 0;
+}
+
+.lg-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .lg-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lg-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 4px;
+}
+
+.lg-field input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.lg-field input:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+/* Letter meta (To / Address / Date) */
+.lg-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.lg-meta-row .lg-input {
+  flex: 1;
+}
+
+.lg-meta-block {
+  margin-bottom: 12px;
+}
+
+.lg-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  margin-bottom: 6px;
+  min-width: 130px;
+}
+
+.lg-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: #4f46e5;
+  cursor: pointer;
+}
+
+.lg-textarea:disabled,
+.lg-input:disabled {
+  background: #f3f4f6;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.lg-warn {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+/* Letter preview */
+.lg-preview-panel {
+  position: sticky;
+  top: 0;
+}
+
+.lg-letter {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 24px;
+  min-height: 400px;
+  font-size: 13px;
+  color: #111827;
+  line-height: 1.6;
+}
+
+.lg-letter-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+}
+
+.lg-letter-logo {
+  height: 42px;
+  object-fit: contain;
+}
+
+.lg-letter-corp {
+  font-size: 10px;
+  color: #374151;
+  text-align: right;
+  line-height: 1.5;
+}
+
+.lg-letter-date {
+  text-align: right;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+
+.lg-letter-to,
+.lg-letter-address {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.lg-letter-address {
+  margin-bottom: 16px;
+}
+
+.lg-letter-subject {
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.lg-letter-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+}

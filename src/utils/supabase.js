@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { loaderFetch } from './loaderStore';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -9,4 +10,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Route Supabase requests through loaderFetch so every query/insert/upload
+// toggles the global loader, regardless of import order.
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  global: { fetch: loaderFetch },
+});

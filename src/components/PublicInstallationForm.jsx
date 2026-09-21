@@ -111,6 +111,9 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
   const [workOrders, setWorkOrders] = useState([]);
   // The currently selected work order object (or null for free-entry mode).
   const [selectedWorkOrder, setSelectedWorkOrder] = useState(null);
+  // The specific order number chosen from the selected work order's array
+  // (empty when the whole work order / name was chosen).
+  const [selectedOrderNo, setSelectedOrderNo] = useState('');
   // Available (unused) serials for the selected work order, grouped by category.
   const [woItems, setWoItems] = useState({ module: [], battery: [], luminaire: [] });
   const [woLoading, setWoLoading] = useState(false);
@@ -125,10 +128,20 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
         if (cancelled) return;
         setWorkOrders(list);
         if (initialWorkOrder) {
+          const target = initialWorkOrder.toLowerCase();
+          // Match by full name OR by any individual order number in the array.
           const match = list.find(
-            (o) => o.name.toLowerCase() === initialWorkOrder.toLowerCase()
+            (o) =>
+              o.name.toLowerCase() === target ||
+              (o.order_numbers || []).some((n) => String(n).toLowerCase() === target)
           );
-          if (match) setSelectedWorkOrder(match);
+          if (match) {
+            setSelectedWorkOrder(match);
+            const matchedNo = (match.order_numbers || []).find(
+              (n) => String(n).toLowerCase() === target
+            );
+            setSelectedOrderNo(matchedNo || '');
+          }
         }
       } catch {
         // Work orders are optional; ignore load failures.
@@ -161,6 +174,25 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
   useEffect(() => {
     loadWoItems(selectedWorkOrder?.id || null);
   }, [selectedWorkOrder, loadWoItems]);
+
+  // Build selectable dropdown options. A work order can now list several
+  // individual order numbers; expose each one as its own choice so field users
+  // can find the shared serial pool by any single order number. Falls back to
+  // the work order name when no order numbers are stored.
+  const workOrderOptions = useMemo(() => {
+    const opts = [];
+    for (const o of workOrders) {
+      const nums = (o.order_numbers || []).filter(Boolean);
+      if (nums.length > 0) {
+        for (const num of nums) {
+          opts.push({ value: `${o.id}::${num}`, workOrderId: o.id, label: num });
+        }
+      } else {
+        opts.push({ value: `${o.id}::`, workOrderId: o.id, label: o.name });
+      }
+    }
+    return opts;
+  }, [workOrders]);
   // Selected (not-yet-uploaded) files. Keys preserved: site_image, signed_pdf, attachments.
   const [files, setFiles] = useState({ site_image: null, signed_pdf: null, attachments: [] });
   const [current, setCurrent] = useState(0); // 0..STEPS.length (last index = review)
@@ -211,28 +243,32 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
 
   // Select a work order by id. Also stamps its name into the work_order field
   // and clears any equipment serials picked for a previous work order.
-  const selectWorkOrder = useCallback((id) => {
-    const wo = workOrders.find((o) => o.id === id) || null;
+  const selectWorkOrder = useCallback((optionValue) => {
+    // optionValue is "<workOrderId>::<orderNumber>" (orderNumber may be empty).
+    const [woId, orderNo] = String(optionValue || '').split('::');
+    const wo = workOrders.find((o) => o.id === woId) || null;
     setSelectedWorkOrder(wo);
+    setSelectedOrderNo(orderNo || '');
     setForm((prev) => ({
       ...prev,
-      work_order: wo ? wo.name : prev.work_order,
+      // Record the specific order number the user picked (fall back to name).
+      work_order: wo ? (orderNo || wo.name) : prev.work_order,
       module_serial: '',
       battery_serial: '',
       luminaire_serial: '',
     }));
   }, [workOrders]);
 
-  // When a work order is selected, keep the work_order field in sync with it.
+  // When a work order is selected, keep the work_order field in sync with the
+  // chosen order number (or the work order name when none was picked).
   useEffect(() => {
     if (selectedWorkOrder) {
+      const desired = selectedOrderNo || selectedWorkOrder.name;
       setForm((prev) =>
-        prev.work_order === selectedWorkOrder.name
-          ? prev
-          : { ...prev, work_order: selectedWorkOrder.name }
+        prev.work_order === desired ? prev : { ...prev, work_order: desired }
       );
     }
-  }, [selectedWorkOrder]);
+  }, [selectedWorkOrder, selectedOrderNo]);
 
   // Set a single-file field (site_image / signed_pdf).
   const setSingleFile = useCallback((key, file) => {
@@ -448,7 +484,7 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
     // available serials so the ones just used drop out of the dropdowns.
     setForm({
       ...emptyInstallation(),
-      ...(selectedWorkOrder ? { work_order: selectedWorkOrder.name } : {}),
+      ...(selectedWorkOrder ? { work_order: selectedOrderNo || selectedWorkOrder.name } : {}),
     });
     setFiles({ site_image: null, signed_pdf: null, attachments: [] });
     setCurrent(0);
@@ -576,12 +612,12 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
                   </label>
                   <select
                     id="pf-workorder"
-                    value={selectedWorkOrder?.id || ''}
+                    value={selectedWorkOrder ? `${selectedWorkOrder.id}::${selectedOrderNo}` : ''}
                     onChange={(e) => selectWorkOrder(e.target.value)}
                   >
                     <option value="">— No work order (free entry) —</option>
-                    {workOrders.map((o) => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
+                    {workOrderOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
                   <span className="pf-help">
@@ -593,6 +629,7 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
               {step.id === 'location' && (
                 <SiteImageField
                   file={files.site_image}
+                  form={form}
                   latitude={form.latitude}
                   longitude={form.longitude}
                   onSelect={(f) => setSingleFile('site_image', f)}
@@ -984,11 +1021,17 @@ function FilesPanel({ step, files, onSetSingle, onAddAttachments, onRemoveAttach
 // photo. When a photo is captured/chosen, we read the device location, stamp
 // the coordinates onto the bottom-right of the image, and auto-fill the
 // latitude / longitude fields on the form.
-function SiteImageField({ file, latitude, longitude, onSelect, onClear, onSetCoords, onSetPlace }) {
+function SiteImageField({ file, form, latitude, longitude, onSelect, onClear, onSetCoords, onSetPlace }) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [localError, setLocalError] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
+  // Keep the ORIGINAL (unstamped) photo + the last captured coords so we can
+  // re-stamp with whatever address details are currently on the form.
+  const [original, setOriginal] = useState(null);
+  const [coords, setCoords] = useState(null);
+  // The place details returned by reverse-geocoding, kept for on-screen debug.
+  const [geo, setGeo] = useState(null);
 
   useEffect(() => {
     if (!file) {
@@ -1005,29 +1048,65 @@ function SiteImageField({ file, latitude, longitude, onSelect, onClear, onSetCoo
       if (!picked) return;
       setLocalError('');
       setBusy(true);
+      setOriginal(picked);
       try {
         setStatus('Getting your location…');
         const { latitude: lat, longitude: lng } = await getCurrentPosition();
+        setCoords({ lat, lng });
         onSetCoords?.(lat, lng);
 
         setStatus('Looking up place details…');
         const place = await reverseGeocode(lat, lng);
+        setGeo(place);
         onSetPlace?.(place);
 
         setStatus('Stamping details onto photo…');
-        const stamped = await stampCoordinatesOnImage(picked, lat, lng, place);
+        // Stamp the resolved place immediately; the user can re-stamp after
+        // editing the fields below.
+        const stamped = await stampCoordinatesOnImage(picked, lat, lng, {
+          exact_location: form?.exact_location,
+          village: place.village || form?.village,
+          block: form?.block,
+          assembly: place.assembly || form?.assembly_constituency,
+          state: place.state || form?.state,
+        });
         onSelect(stamped);
       } catch (err) {
         // If location fails, still keep the photo but warn the user.
         setLocalError(err.message || 'Could not capture location.');
+        setCoords(null);
         onSelect(picked);
       } finally {
         setBusy(false);
         setStatus('');
       }
     },
-    [onSelect, onSetCoords, onSetPlace]
+    [onSelect, onSetCoords, onSetPlace, form]
   );
+
+  // Re-stamp the original photo using the address details currently typed into
+  // the form. Useful when the user corrects the auto-filled village/state.
+  const restamp = useCallback(async () => {
+    if (!original || !coords) return;
+    setLocalError('');
+    setBusy(true);
+    setStatus('Re-stamping details onto photo…');
+    try {
+      const stamped = await stampCoordinatesOnImage(original, coords.lat, coords.lng, {
+        exact_location: form?.exact_location,
+        village: form?.village,
+        block: form?.block,
+        assembly: form?.assembly_constituency,
+        state: form?.state,
+      });
+      onSelect(stamped);
+    } catch (err) {
+      setLocalError(err.message || 'Could not re-stamp the photo.');
+    } finally {
+      setBusy(false);
+      setStatus('');
+    }
+  }, [original, coords, form, onSelect]);
 
   return (
     <div className="pf-file-field">
@@ -1065,6 +1144,18 @@ function SiteImageField({ file, latitude, longitude, onSelect, onClear, onSetCoo
             }}
           />
         </label>
+
+        {original && coords && (
+          <button
+            type="button"
+            className="pf-file-btn pf-file-btn-ghost"
+            disabled={busy}
+            onClick={restamp}
+            title="Re-stamp the photo with the address details entered below"
+          >
+            <MapPin size={16} /> Re-stamp with entered details
+          </button>
+        )}
       </div>
 
       {busy && (
@@ -1077,6 +1168,27 @@ function SiteImageField({ file, latitude, longitude, onSelect, onClear, onSetCoo
         <div className="pf-capture-warn">
           <AlertCircle size={13} /> {localError}
         </div>
+      )}
+
+      {/* Debug panel: shows exactly what the location + reverse-geocode returned */}
+      {(coords || geo) && (
+        <details className="pf-geo-debug" open>
+          <summary>Location data returned (for debugging)</summary>
+          <dl className="pf-geo-debug-list">
+            <div><dt>Latitude</dt><dd>{coords ? formatCoord(coords.lat) : '—'}</dd></div>
+            <div><dt>Longitude</dt><dd>{coords ? formatCoord(coords.lng) : '—'}</dd></div>
+            <div><dt>Resolved village</dt><dd>{geo?.village || '—'}</dd></div>
+            <div><dt>Resolved assembly</dt><dd>{geo?.assembly || '—'}</dd></div>
+            <div><dt>Resolved state</dt><dd>{geo?.state || '—'}</dd></div>
+            <div className="pf-geo-debug-full"><dt>Full address</dt><dd>{geo?.display || '—'}</dd></div>
+          </dl>
+          {geo?.raw && (
+            <>
+              <span className="pf-help">Raw Nominatim response:</span>
+              <pre className="pf-geo-debug-raw">{JSON.stringify(geo.raw, null, 2)}</pre>
+            </>
+          )}
+        </details>
       )}
 
       {file && previewUrl && (

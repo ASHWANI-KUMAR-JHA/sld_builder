@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { ArrowLeft, LogOut, Plus, Trash2, Download, FileText, Save, Upload, AlertTriangle, CheckCircle2, Send } from 'lucide-react';
+import { ArrowLeft, LogOut, Plus, Trash2, Download, FileText, Save, Upload, AlertTriangle, CheckCircle2, Send, RefreshCw } from 'lucide-react';
 import jsPDF from 'jspdf';
 import Logo from './Logo';
 import { readSheetRows, extractIdList } from '../utils/spreadsheet';
@@ -256,12 +256,21 @@ function DuplicatePanel({ title, list }) {
 }
 
 // Reusable bulk-upload box for one ID list (SPV / Battery / Luminaire)
-function BulkUploadBox({ title, list, onUpload, onPaste, onClear, onChange }) {
+function BulkUploadBox({ title, list, onUpload, onPaste, onClear, onChange, onTitleChange }) {
   const inputRef = useRef(null);
   return (
     <div className="bulk-box">
       <div className="bulk-box-head">
-        <span className="bulk-title">{title}</span>
+        {onTitleChange ? (
+          <input
+            className="bulk-title-input"
+            value={title}
+            onChange={(e) => onTitleChange(e.target.value)}
+            title="Edit the heading printed on this list's PDF pages"
+          />
+        ) : (
+          <span className="bulk-title">{title}</span>
+        )}
         <span className="bulk-count">{list.filter(id => id.trim() !== '').length} IDs</span>
       </div>
       <div className="bulk-actions">
@@ -348,6 +357,14 @@ function PDI({ onBack, onLogout }) {
   const [signatureCount, setSignatureCount] = useState(PERSISTED.signatureCount ?? 0);
   const [signatures, setSignatures] = useState(PERSISTED.signatures ?? []);
 
+  // Editable headings for the three attached ID-list sections. These titles are
+  // shown in the UI and printed at the top of each list's PDF pages.
+  const [listTitles, setListTitles] = useState(PERSISTED.listTitles ?? {
+    spv: 'SPV MODULE SERIAL NUMBERS (ATTACHED LIST)',
+    battery: 'BATTERY SERIAL NUMBERS (ATTACHED LIST)',
+    luminaire: 'LUMINAIRE SERIAL NUMBERS (ATTACHED LIST)',
+  });
+
   // Bulk uploaded ID lists (attached lists) — printed as paginated pages in the PDF
   const [spvList, setSpvList] = useState(PERSISTED.spvList ?? []);       // array of id strings
   const [batteryList, setBatteryList] = useState(PERSISTED.batteryList ?? []);
@@ -356,6 +373,20 @@ function PDI({ onBack, onLogout }) {
   // Work Order submission state
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState(null);
+
+  // PDF layout / spacing controls (all in mm unless noted). Adjustable so you can
+  // tighten spacing and control where page breaks fall before exporting.
+  const [layout, setLayout] = useState(PERSISTED.layout ?? {
+    lineGap: 3.6,       // extra height per text line inside rows
+    rowPad: 2,          // vertical padding added to each table/info row
+    sectionGap: 3,      // gap after a table/section
+    bottomMargin: 20,   // distance from page bottom before a page break
+    keepRows: 2,        // min rows kept with header (avoids orphan rows on a new page)
+  });
+
+  // PDF preview modal
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -381,6 +412,7 @@ function PDI({ onBack, onLogout }) {
       projectName, reportHeading, fields, additionalFields, workOrders,
       sampleCount, spvRows, batteryRows, luminaireRows, customSections, committeeComments,
       supplier, signatureCount, signatures, spvList, batteryList, luminaireList, customBulkSections,
+      layout, listTitles,
     };
     try {
       localStorage.setItem(PDI_STORAGE_KEY, JSON.stringify(data));
@@ -391,6 +423,7 @@ function PDI({ onBack, onLogout }) {
     projectName, reportHeading, fields, additionalFields, workOrders,
     sampleCount, spvRows, batteryRows, luminaireRows, customSections, committeeComments,
     supplier, signatureCount, signatures, spvList, batteryList, luminaireList, customBulkSections,
+    layout, listTitles,
   ]);
 
   // Export all current PDI data as a downloadable JSON file
@@ -399,6 +432,7 @@ function PDI({ onBack, onLogout }) {
       projectName, reportHeading, fields, additionalFields, workOrders,
       sampleCount, spvRows, batteryRows, luminaireRows, customSections, committeeComments,
       supplier, signatureCount, signatures, spvList, batteryList, luminaireList, customBulkSections,
+      layout, listTitles,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -414,6 +448,7 @@ function PDI({ onBack, onLogout }) {
     projectName, reportHeading, fields, additionalFields, workOrders,
     sampleCount, spvRows, batteryRows, luminaireRows, customSections, committeeComments,
     supplier, signatureCount, signatures, spvList, batteryList, luminaireList, customBulkSections,
+    layout, listTitles,
   ]);
 
   // Load PDI data from a user-selected JSON file
@@ -442,6 +477,8 @@ function PDI({ onBack, onLogout }) {
         if (d.batteryList) setBatteryList(d.batteryList);
         if (d.luminaireList) setLuminaireList(d.luminaireList);
         if (d.customBulkSections) setCustomBulkSections(d.customBulkSections);
+        if (d.layout) setLayout(prev => ({ ...prev, ...d.layout }));
+        if (d.listTitles) setListTitles(prev => ({ ...prev, ...d.listTitles }));
       } catch (err) {
         console.error('Failed to parse JSON file:', err);
         alert('Could not load file: invalid JSON.');
@@ -631,16 +668,30 @@ function PDI({ onBack, onLogout }) {
     setSubmitting(true);
     
     try {
-      // Create work order name: RateContractNo + WorkOrderNo + PDIDate
-      const firstWorkOrder = workOrders[0].orderNo.trim();
-      const workOrderName = `${rateContract} | ${firstWorkOrder} | ${pdiDate}`;
+      // Create work order name: RateContractNo + WorkOrderNos + PDIDate
+      // Combine ALL filled work order numbers as comma-separated values so a
+      // single work order entry represents every order number entered.
+      const allWorkOrderNos = workOrders
+        .map(w => w.orderNo?.trim())
+        .filter(Boolean)
+        .join(', ');
+      const workOrderName = `${rateContract} | ${allWorkOrderNos} | ${pdiDate}`;
       const workOrderDescription = `PDI Report - ${projectName || 'Solar Street Lighting'}`;
+      // Individual order numbers stored as an array so the shared serial pool
+      // can be reached by any one of them on the public form.
+      const orderNumbersArray = workOrders
+        .map(w => w.orderNo?.trim())
+        .filter(Boolean);
+      console.log('[PDI Submit] workOrders rows:', workOrders);
+      console.log('[PDI Submit] order numbers array:', orderNumbersArray);
+      console.log('[PDI Submit] final work order name:', workOrderName);
 
       // Find or create work order
       const workOrder = await findOrCreateWorkOrder({
         name: workOrderName,
         description: workOrderDescription,
         createdBy: 'PDI Form',
+        orderNumbers: orderNumbersArray,
       });
 
       // Upload serial numbers for each category
@@ -681,14 +732,25 @@ function PDI({ onBack, onLogout }) {
     }
   }, [fields, workOrders, spvList, batteryList, luminaireList, projectName]);
 
-  // ============ PDF EXPORT ============
-  const exportPDF = useCallback(async () => {
+  // ============ PDF BUILD ============
+  // Builds the full jsPDF document using the current layout/spacing settings and
+  // returns the doc (does not save). Used by both preview and export.
+  const buildPDF = useCallback(() => {
     const doc = new jsPDF('portrait', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.getWidth(); // 210
     const pageHeight = doc.internal.pageSize.getHeight(); // 297
     const margin = 12;
     const contentWidth = pageWidth - margin * 2;
-    const bottomLimit = pageHeight - 20;
+    // Adjustable spacing knobs
+    const lineGap = Number(layout.lineGap) || 3.6;
+    const rowPad = Number(layout.rowPad) || 2;
+    const sectionGap = Number(layout.sectionGap) || 3;
+    // The footer divider sits at pageHeight - 14. Content must never cross it,
+    // otherwise the footer line prints through the last row. Clamp so the
+    // smallest allowed bottom margin still leaves room for the footer.
+    const FOOTER_RESERVE = 16; // mm reserved for footer line + page number
+    const requestedBottom = Number(layout.bottomMargin) || 20;
+    const bottomLimit = pageHeight - Math.max(requestedBottom, FOOTER_RESERVE);
 
     let pageNo = 0;
 
@@ -719,13 +781,13 @@ function PDI({ onBack, onLogout }) {
         const headingLines = doc.splitTextToSize(reportHeading || DEFAULT_HEADING, contentWidth);
         doc.text(headingLines, pageWidth / 2, y + 2, { align: 'center' });
         y += headingLines.length * 4.5 + 2;
-        if (projectName) {
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'bolditalic');
-          const projLines = doc.splitTextToSize(`Project: ${projectName}`, contentWidth);
-          doc.text(projLines, pageWidth / 2, y + 2, { align: 'center' });
-          y += projLines.length * 4 + 2;
-        }
+        // if (projectName) {
+        //   doc.setFontSize(9);
+        //   doc.setFont('helvetica', 'bolditalic');
+        //   const projLines = doc.splitTextToSize(`Project: ${projectName}`, contentWidth);
+        //   doc.text(projLines, pageWidth / 2, y + 2, { align: 'center' });
+        //   y += projLines.length * 4 + 2;
+        // }
       }
       return y + 2;
     };
@@ -749,7 +811,7 @@ function PDI({ onBack, onLogout }) {
       const labelLines = doc.splitTextToSize(label, midColW - 3);
       const valueLines = doc.splitTextToSize(value || '', valColW - 3);
       const linesN = Math.max(labelLines.length, valueLines.length, 1);
-      const rowH = Math.max(6, linesN * 3.6 + 2);
+      const rowH = Math.max(6, linesN * lineGap + rowPad);
       y = ensureSpace(y, rowH);
       const x = margin;
       // borders
@@ -799,43 +861,58 @@ function PDI({ onBack, onLogout }) {
         y += gH;
       }
 
-      // header row
+      // header row metrics
       const headerLinesArr = cols.map(c => doc.splitTextToSize(c.label, colW - 2));
       const headerLineN = Math.max(...headerLinesArr.map(l => l.length), 1);
       const headerH = Math.max(8, headerLineN * 3 + 2);
-      y = ensureSpace(y, headerH);
-      doc.setFontSize(6.5);
-      doc.setFont('helvetica', 'bold');
-      cols.forEach((c, i) => {
-        const cx = x + colW * i;
-        doc.rect(cx, y, colW, headerH);
-        doc.text(headerLinesArr[i], cx + colW / 2, y + 3.5, { align: 'center' });
-      });
-      y += headerH;
 
-      // data rows
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      rows.forEach((row, ri) => {
-        const cellLinesArr = cols.map((c, i) => {
+      const drawHeader = (hy) => {
+        doc.setFontSize(6.5);
+        doc.setFont('helvetica', 'bold');
+        cols.forEach((c, i) => {
+          const cx = x + colW * i;
+          doc.rect(cx, hy, colW, headerH);
+          doc.text(headerLinesArr[i], cx + colW / 2, hy + 3.5, { align: 'center' });
+        });
+        return hy + headerH;
+      };
+
+      // Precompute every row's rendered lines + height so we can reason about breaks.
+      const rowsMeta = rows.map((row) => {
+        const cellLinesArr = cols.map((c) => {
           const val = c.key === 'srNo' && (row.srNo === undefined || row.srNo === '')
             ? '' : (row[c.key] ?? '');
           return doc.splitTextToSize(String(val), colW - 2);
         });
         const rowLineN = Math.max(...cellLinesArr.map(l => l.length), 1);
-        const rowH = Math.max(6, rowLineN * 3.2 + 2);
-        if (y + rowH > bottomLimit) {
+        const rowH = Math.max(6, rowLineN * (lineGap - 0.4) + rowPad);
+        return { cellLinesArr, rowH };
+      });
+
+      // Keep the header together with the first few rows. If they don't fit on
+      // the current page, move the whole table start to a fresh page. This is
+      // what stops a table from leaving a lone orphan row on the next page.
+      const keepN = Math.max(1, Math.min(Number(layout.keepRows) || 1, rowsMeta.length || 1));
+      const firstBlockH = headerH + rowsMeta.slice(0, keepN).reduce((s, m) => s + m.rowH, 0);
+      if (y + firstBlockH > bottomLimit) {
+        drawFooter();
+        y = newPage(true);
+      }
+
+      y = drawHeader(y);
+
+      // data rows
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      rowsMeta.forEach((meta, ri) => {
+        const { cellLinesArr, rowH } = meta;
+        // Rows still remaining after this one (used to avoid orphaning the tail).
+        const remainingAfter = rowsMeta.slice(ri + 1).reduce((s, m) => s + m.rowH, 0);
+        const needsBreak = y + rowH > bottomLimit;
+        if (needsBreak) {
           drawFooter();
           y = newPage(true);
-          // reprint header
-          doc.setFontSize(6.5);
-          doc.setFont('helvetica', 'bold');
-          cols.forEach((c, i) => {
-            const cx = x + colW * i;
-            doc.rect(cx, y, colW, headerH);
-            doc.text(headerLinesArr[i], cx + colW / 2, y + 3.5, { align: 'center' });
-          });
-          y += headerH;
+          y = drawHeader(y);
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(7);
         }
@@ -845,9 +922,11 @@ function PDI({ onBack, onLogout }) {
           doc.text(cellLinesArr[i], cx + colW / 2, y + 4, { align: 'center' });
         });
         y += rowH;
+        // Suppress unused-var lint for remainingAfter (kept for readability).
+        void remainingAfter;
       });
 
-      return y + 3;
+      return y + sectionGap;
     };
 
     // ===== PAGE 1 =====
@@ -1044,18 +1123,47 @@ function PDI({ onBack, onLogout }) {
 
     // Each component's attached list followed by its custom bulk lists.
     // uniqueIds() ensures only unique serial numbers reach the PDF.
-    drawIdListPages('SPV MODULE SERIAL NUMBERS (ATTACHED LIST)', uniqueIds(spvList));
+    drawIdListPages(listTitles.spv || 'SPV MODULE SERIAL NUMBERS (ATTACHED LIST)', uniqueIds(spvList));
     drawCustomBulkFor('spv');
-    drawIdListPages('BATTERY SERIAL NUMBERS (ATTACHED LIST)', uniqueIds(batteryList));
+    drawIdListPages(listTitles.battery || 'BATTERY SERIAL NUMBERS (ATTACHED LIST)', uniqueIds(batteryList));
     drawCustomBulkFor('battery');
-    drawIdListPages('LUMINAIRE SERIAL NUMBERS (ATTACHED LIST)', uniqueIds(luminaireList));
+    drawIdListPages(listTitles.luminaire || 'LUMINAIRE SERIAL NUMBERS (ATTACHED LIST)', uniqueIds(luminaireList));
     drawCustomBulkFor('luminaire');
 
     drawFooter();
 
+    return doc;
+  }, [layout, projectName, reportHeading, fields, additionalFields, workOrders, sampleCount, spvRows, batteryRows, luminaireRows, customSections, committeeComments, signatures, supplier, spvList, batteryList, luminaireList, customBulkSections, listTitles]);
+
+  // Download the PDF using the current settings.
+  const exportPDF = useCallback(() => {
+    const doc = buildPDF();
     const safeName = (projectName || 'PDI_report').replace(/[^\w\-]+/g, '_');
     doc.save(`${safeName}.pdf`);
-  }, [projectName, reportHeading, fields, additionalFields, workOrders, sampleCount, spvRows, batteryRows, luminaireRows, customSections, committeeComments, signatures, supplier, spvList, batteryList, luminaireList, customBulkSections]);
+  }, [buildPDF, projectName]);
+
+  // Open a live preview of the PDF in a modal (so pages can be checked before export).
+  const previewPDF = useCallback(() => {
+    const doc = buildPDF();
+    const url = doc.output('bloburl');
+    setPreviewUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return url;
+    });
+    setShowPreview(true);
+  }, [buildPDF]);
+
+  const closePreview = useCallback(() => {
+    setShowPreview(false);
+    setPreviewUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }, []);
+
+  const updateLayout = useCallback((key, value) => {
+    setLayout(prev => ({ ...prev, [key]: value }));
+  }, []);
 
   return (
     <div className="jcr-page">
@@ -1090,6 +1198,10 @@ function PDI({ onBack, onLogout }) {
               <Save size={18} />
               <span>Export JSON</span>
             </button>
+            <button className="header-btn" onClick={previewPDF} title="Preview PDF before export">
+              <FileText size={18} />
+              <span>Preview PDF</span>
+            </button>
             <button className="header-btn export" onClick={exportPDF} title="Export PDF">
               <Download size={18} />
               <span>Export PDF</span>
@@ -1122,6 +1234,71 @@ function PDI({ onBack, onLogout }) {
               onChange={(e) => setReportHeading(e.target.value)}
               placeholder="Report heading"
             />
+          </div>
+        </section>
+
+        {/* PDF spacing controls */}
+        <section className="jcr-card">
+          <h3 className="pdi-spacing-title">PDF Spacing &amp; Page Layout</h3>
+          <p className="pdi-spacing-hint">
+            Adjust these to control how much space rows take and where page breaks fall.
+            Lower values pack more onto each page. Use Preview PDF to check pages before exporting.
+          </p>
+          <div className="pdi-spacing-grid">
+            <div className="jcr-field-block">
+              <label>Line spacing (mm/line)</label>
+              <input
+                type="number" step="0.1" min="2.4" max="8"
+                value={layout.lineGap}
+                onChange={(e) => updateLayout('lineGap', e.target.value)}
+              />
+            </div>
+            <div className="jcr-field-block">
+              <label>Row padding (mm)</label>
+              <input
+                type="number" step="0.5" min="0" max="8"
+                value={layout.rowPad}
+                onChange={(e) => updateLayout('rowPad', e.target.value)}
+              />
+            </div>
+            <div className="jcr-field-block">
+              <label>Gap after section (mm)</label>
+              <input
+                type="number" step="0.5" min="0" max="12"
+                value={layout.sectionGap}
+                onChange={(e) => updateLayout('sectionGap', e.target.value)}
+              />
+            </div>
+            <div className="jcr-field-block">
+              <label>Bottom margin before break (mm)</label>
+              <input
+                type="number" step="1" min="16" max="40"
+                value={layout.bottomMargin}
+                onChange={(e) => updateLayout('bottomMargin', e.target.value)}
+              />
+            </div>
+            <div className="jcr-field-block">
+              <label>Keep rows with header (min)</label>
+              <input
+                type="number" step="1" min="1" max="20"
+                value={layout.keepRows}
+                onChange={(e) => updateLayout('keepRows', e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="pdi-spacing-actions">
+            <button
+              type="button"
+              className="header-btn"
+              onClick={() => setLayout({ lineGap: 3.6, rowPad: 2, sectionGap: 3, bottomMargin: 20, keepRows: 2 })}
+              title="Reset spacing to defaults"
+            >
+              Reset spacing
+            </button>
+            <button type="button" className="header-btn export" onClick={previewPDF}>
+              <FileText size={16} />
+              <span>Preview PDF</span>
+            </button>
           </div>
         </section>
 
@@ -1492,7 +1669,8 @@ function PDI({ onBack, onLogout }) {
           </p>
           <div className="bulk-upload-grid">
             <BulkUploadBox
-              title="SPV Modules"
+              title={listTitles.spv}
+              onTitleChange={(v) => setListTitles(prev => ({ ...prev, spv: v }))}
               list={spvList}
               onUpload={(e) => handleListUpload(e, setSpvList)}
               onPaste={handleListPaste(setSpvList)}
@@ -1500,7 +1678,8 @@ function PDI({ onBack, onLogout }) {
               onClear={() => setSpvList([])}
             />
             <BulkUploadBox
-              title="Batteries"
+              title={listTitles.battery}
+              onTitleChange={(v) => setListTitles(prev => ({ ...prev, battery: v }))}
               list={batteryList}
               onUpload={(e) => handleListUpload(e, setBatteryList)}
               onPaste={handleListPaste(setBatteryList)}
@@ -1508,7 +1687,8 @@ function PDI({ onBack, onLogout }) {
               onClear={() => setBatteryList([])}
             />
             <BulkUploadBox
-              title="Luminaries"
+              title={listTitles.luminaire}
+              onTitleChange={(v) => setListTitles(prev => ({ ...prev, luminaire: v }))}
               list={luminaireList}
               onUpload={(e) => handleListUpload(e, setLuminaireList)}
               onPaste={handleListPaste(setLuminaireList)}
@@ -1581,7 +1761,7 @@ function PDI({ onBack, onLogout }) {
             <div className="pdi-submit-info">
               <p><strong>Submit PDI to Work Orders:</strong></p>
               <p className="jcr-hint">
-                This will create a Work Order with the format: <strong>Rate Contract No + Work Order No + PDI Date</strong>
+                This will create a Work Order with the format: <strong>Rate Contract No + Work Order No(s) + PDI Date</strong>. All Work Order Numbers entered above are combined into a single entry (comma-separated).
                 <br />
                 All serial numbers from the bulk upload lists above will be added to the work order.
               </p>
@@ -1609,11 +1789,40 @@ function PDI({ onBack, onLogout }) {
           <button className="btn-export-main secondary" onClick={exportJSON}>
             <Save size={18} /> Export JSON
           </button>
+          <button className="btn-export-main secondary" onClick={previewPDF}>
+            <FileText size={18} /> Preview PDF
+          </button>
           <button className="btn-export-main" onClick={exportPDF}>
             <Download size={18} /> Export PDF
           </button>
         </div>
       </div>
+
+      {showPreview && (
+        <div className="pdi-preview-overlay" onClick={closePreview}>
+          <div className="pdi-preview-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="pdi-preview-toolbar">
+              <span className="pdi-preview-title">PDF Preview</span>
+              <div className="pdi-preview-toolbar-actions">
+                <button className="header-btn" onClick={previewPDF} title="Re-render with current spacing">
+                  <RefreshCw size={16} />
+                  <span>Refresh</span>
+                </button>
+                <button className="header-btn export" onClick={exportPDF} title="Download PDF">
+                  <Download size={16} />
+                  <span>Download</span>
+                </button>
+                <button className="header-btn" onClick={closePreview} title="Close preview">
+                  <span>Close</span>
+                </button>
+              </div>
+            </div>
+            {previewUrl && (
+              <iframe className="pdi-preview-frame" src={previewUrl} title="PDF preview" />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
